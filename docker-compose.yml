@@ -16,5 +16,14 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
 
+  frontend:
+    build: ./frontend
+    restart: always
+    ports:
+      - "5173:5173"
+    volumes: 
+      - ./frontend:/app
+      - /app/node_modules
+
 volumes:
   n8n_data:
