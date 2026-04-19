@@ -4,6 +4,6 @@ WORKDIR /app
 
 COPY . .
 
-RUN pip install fastapi uvicorn psycopg2-binary python-dotenv
+RUN pip install fastapi uvicorn psycopg2-binary python-dotenv qdrant-client
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

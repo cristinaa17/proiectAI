@@ -3,12 +3,17 @@ import psycopg2
 import os
 from dotenv import load_dotenv
 
+from qdrant_client.models import VectorParams, Distance
+from qdrant_client import QdrantClient
+
 load_dotenv()
 
 app = FastAPI()
 
 conn = psycopg2.connect(os.getenv("DATABASE_URL"))
 cur = conn.cursor()
+
+qdrant = QdrantClient(host=os.getenv("QDRANT_HOST", "qdrant"), port=6333)
 
 @app.get("/")
 def home():
@@ -25,3 +30,19 @@ def get_test():
     cur.execute("SELECT * FROM test;")
     rows = cur.fetchall()
     return {"data": rows}
+
+@app.post("/create-collection")
+def create_collection():
+    qdrant.recreate_collection(
+        collection_name="documents",
+        vectors_config=VectorParams(
+            size=384,
+            distance=Distance.COSINE
+        ),
+    )
+    return {"status": "collection created "}
+
+@app.get("/test-qdrant")
+def test_qdrant():
+    collections = qdrant.get_collections()
+    return {"collections": collections}
