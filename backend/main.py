@@ -5,9 +5,10 @@ import uuid
 import fitz
 from dotenv import load_dotenv
 
-from qdrant_client.models import VectorParams, Distance, PointStruct
+from qdrant_client.models import Filter, FieldCondition, MatchValue, VectorParams, Distance, PointStruct
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
+from groq import Groq
 
 load_dotenv()
 
@@ -19,6 +20,8 @@ cur = conn.cursor()
 qdrant = QdrantClient(host=os.getenv("QDRANT_HOST", "qdrant"), port=6333)
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
+
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 @app.get("/")
 def home():
@@ -150,3 +153,58 @@ async def upload_document(
         "subject":       subject,
         "total_chunks":  len(points),
     }
+
+@app.post("/chat")
+async def chat(request: dict):
+    question = request.get("question")
+    subject = request.get("subject", None)  
+
+    if not question:
+        raise HTTPException(status_code=400, detail="Întrebarea nu poate fi goală.")
+
+    # 1. Embed întrebarea
+    query_vector = model.encode(question).tolist()
+
+    # 2. Caută în Qdrant cele mai relevante chunks
+    query_filter = None
+    if subject:
+        query_filter = Filter(
+            must=[FieldCondition(key="subject", match=MatchValue(value=subject))]
+        )
+
+    results = qdrant.query_points(
+        collection_name="documents",
+        query=query_vector,
+        query_filter=query_filter,
+        limit=5
+    ).points
+
+    if not results:
+        return {"answer": "Nu am găsit informații relevante în documentele încărcate."}
+
+    # 3. Construiește contextul din chunks găsite
+    context = "\n\n".join([r.payload["text"] for r in results])
+
+    # 4. Trimite la Gemini
+    prompt = f"""Ești MindCore, un asistent academic pentru studenții ULBS.
+Răspunde la întrebarea studentului folosind DOAR informațiile din contextul de mai jos.
+Dacă răspunsul nu se găsește în context, spune că nu ai informații despre asta.
+
+Context:
+{context}
+
+Întrebarea studentului: {question}
+
+Răspuns:"""
+
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return {
+        "answer": response.choices[0].message.content,
+        "sources": [
+            {"filename": r.payload["filename"], "page": r.payload["page"]}
+            for r in results
+    ]
+}
