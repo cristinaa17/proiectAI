@@ -1,10 +1,25 @@
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import './Header.css'
+import { useState, useEffect } from 'react'
 
 export default function Header() {
   const navigate = useNavigate()
-  const user = JSON.parse(localStorage.getItem('user'))
+ const [user, setUser] = useState(null)
+
+useEffect(() => {
+  const storedUser = localStorage.getItem('user')
+  if (storedUser) {
+    setUser(JSON.parse(storedUser))
+  }
+}, [])
+
+
+const handleLogout = () => {
+  localStorage.removeItem('user')
+  setUser(null)
+  navigate('/')
+}
 
   return (
     <motion.header
@@ -16,7 +31,12 @@ export default function Header() {
 
       <div className="header-right">
         {user ? (
+          <>
           <span className="user">{user.email}</span>
+          <button onClick={handleLogout} className="login-btn small">
+      Logout
+    </button>
+    </>
         ) : (
           <button onClick={() => navigate('/login')} className="login-btn small">
             Login
