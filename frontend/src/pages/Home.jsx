@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import './Home.css'
 import { Brain, FileText, Layers, BookOpen } from 'lucide-react'
@@ -113,6 +114,8 @@ const itemVariants = {
 }
  
 export default function Home() {
+  const navigate = useNavigate();
+
   return (
     <div className="home">
       <AuroraBackground />
@@ -149,6 +152,7 @@ export default function Home() {
             <motion.div
               key={card.title}
               className={`feature-card ${card.color}`}
+              onClick={() => navigate('/chat')}
               variants={itemVariants}
               whileHover={{ y: -6, scale: 1.03 }}
               transition={{ type: 'spring', stiffness: 300 }}
