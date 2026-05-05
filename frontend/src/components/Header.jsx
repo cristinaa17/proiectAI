@@ -5,19 +5,23 @@ import { useState, useEffect } from 'react'
 
 export default function Header() {
   const navigate = useNavigate()
- const [user, setUser] = useState(null)
+const [token, setToken] = useState(null)
+
+const storedUser = localStorage.getItem('user')
+const user = storedUser ? JSON.parse(storedUser) : null
 
 useEffect(() => {
-  const storedUser = localStorage.getItem('user')
-  if (storedUser) {
-    setUser(JSON.parse(storedUser))
+  const storedToken = localStorage.getItem('token')
+  if (storedToken) {
+    setToken(storedToken)
   }
 }, [])
 
 
 const handleLogout = () => {
+  localStorage.removeItem('token')
   localStorage.removeItem('user')
-  setUser(null)
+  setToken(null)
   navigate('/')
 }
 
@@ -30,9 +34,9 @@ const handleLogout = () => {
       <div className="logo">MindCore</div>
 
       <div className="header-right">
-        {user ? (
+        {token ? (
           <>
-          <span className="user">{user.email}</span>
+          <span className="user">{user?.email}</span>
           <button onClick={handleLogout} className="login-btn small">
       Logout
     </button>

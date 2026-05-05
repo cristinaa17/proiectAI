@@ -15,22 +15,42 @@ export default function Login() {
     return /\S+@\S+\.\S+/.test(email)
   }
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
+  const handleSubmit = async (e) => {
+  e.preventDefault()
 
-    if (!validateEmail(email)) {
-      return setError('Email invalid')
-    }
-
-    if (password.length < 4) {
-      return setError('Parola prea scurtă')
-    }
-
-    setError('')
-
-    localStorage.setItem('user', JSON.stringify({ email }))
-    navigate('/')
+  if (!validateEmail(email)) {
+    return setError('Email invalid')
   }
+
+  if (password.length < 4) {
+    return setError('Parola prea scurtă')
+  }
+
+  setError('')
+
+  try {
+    const res = await fetch('http://localhost:8000/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    })
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      return setError(data.message || 'Login failed')
+    }
+
+localStorage.setItem('token', data.access_token)
+localStorage.setItem('user', JSON.stringify({ email }))
+
+    navigate('/')
+  } catch (err) {
+    setError('Server error')
+  }
+}
 
   return (
     <div className="login-container">

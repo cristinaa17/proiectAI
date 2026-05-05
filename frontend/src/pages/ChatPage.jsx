@@ -64,8 +64,8 @@ export default function ChatPage() {
   };
 
   // ── Send message ─────────────────────────────────────────────
-  const handleSend = () => {
-    if (!input.trim() || isTyping) return;
+const handleSend = async () => {
+      if (!input.trim() || isTyping) return;
 
     const t = new Date().toLocaleTimeString('ro', { hour: '2-digit', minute: '2-digit' });
     const userMsg = { id: Date.now(), role: 'user', content: input, time: t };
@@ -86,42 +86,83 @@ export default function ChatPage() {
       setChats(prev => ({ ...prev, [chatId]: newChat }));
       setActiveId(chatId);
     } else {
-      // ── Mesaj într-o conversație existentă ──
-      setChats(prev => ({
-        ...prev,
-        [chatId]: {
-          ...prev[chatId],
-          messages: [...prev[chatId].messages, userMsg],
-        },
-      }));
-    }
+  setChats(prev => ({
+    ...prev,
+    [chatId]: {
+      ...prev[chatId],
+      messages: [...prev[chatId].messages, userMsg],
+    },
+  }));
+}
 
-    setInput('');
-    setIsTyping(true);
+    const userInput = input;   // ✅ salvăm mesajul
+setInput('');
+setIsTyping(true);
 
-    // Simulare răspuns AI
-    const capturedId = chatId;
-    setTimeout(() => {
-      setIsTyping(false);
-      const botMsg = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content: 'Analizez cursurile tale și îți pregătesc cel mai complet răspuns. Bazat pe materialele încărcate, iată ce am găsit relevant pentru întrebarea ta…',
-        time: new Date().toLocaleTimeString('ro', { hour: '2-digit', minute: '2-digit' }),
-      };
-      setChats(prev => ({
-        ...prev,
-        [capturedId]: {
-          ...prev[capturedId],
-          messages: [...prev[capturedId].messages, botMsg],
-        },
-      }));
-    }, 1800);
+const capturedId = chatId;
+const token = localStorage.getItem('token')
+
+try {
+  const res = await fetch('http://localhost:8000/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      question: userInput   // ✅ folosim valoarea salvată
+    })
+  })
+
+  const data = await res.json()
+
+  setIsTyping(false)
+
+  const botMsg = {
+    id: Date.now() + 1,
+    role: 'assistant',
+    content: data.answer,
+    time: new Date().toLocaleTimeString('ro', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }),
+  }
+
+  setChats(prev => ({
+  ...prev,
+  [capturedId]: {
+    ...prev[capturedId],
+    messages: [...prev[capturedId].messages, botMsg],
+  },
+}))
+
+} catch (err) {
+  setIsTyping(false)
+
+  const errorMsg = {
+    id: Date.now() + 1,
+    role: 'assistant',
+    content: 'Eroare la conectarea cu serverul.',
+    time: new Date().toLocaleTimeString('ro', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }),
+  }
+
+  setChats(prev => ({
+    ...prev,
+    [capturedId]: {
+      ...prev[capturedId],
+      messages: [...prev[capturedId].messages, errorMsg],
+    },
+  }))
+}
   };
 
   // ── Switch chat ──────────────────────────────────────────────
   const handleSetActive = (id) => {
     setActiveId(id);
+    const userInput = input
     setInput('');
     setIsTyping(false);
   };
