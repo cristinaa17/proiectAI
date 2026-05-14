@@ -5,6 +5,8 @@ import os
 import uuid
 import fitz
 from dotenv import load_dotenv
+import fitz  # PyMuPDF
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from qdrant_client.models import Filter, FieldCondition, MatchValue, VectorParams, Distance, PointStruct
 from qdrant_client import QdrantClient
@@ -18,22 +20,32 @@ from fastapi import Body
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-load_dotenv()
+# Permitem frontend-ului de pe portul 5173 să comunice cu noi
 
+
+load_dotenv()
 app = FastAPI()
+
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"], # Permite toate metodele (GET, POST, PUT, DELETE etc.)
+    allow_headers=["*"], # Permite toate headerele
 )
 
 conn = psycopg2.connect(os.getenv("DATABASE_URL"))
 cur = conn.cursor()
 
-qdrant = QdrantClient(host=os.getenv("QDRANT_HOST", "qdrant"), port=6333)
+qdrant = QdrantClient(
+    url=os.getenv("QDRANT_URL"),
+    api_key=os.getenv("QDRANT_API_KEY"),
+)
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -60,11 +72,19 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 @app.get("/")
 def home():
     return {"status": "connected to db ✅"}
+from fastapi import HTTPException
 
 @app.get("/test-db")
 def test_db():
-    cur.execute("SELECT 1;")
-    return {"db": "working ✅"}
+    try:
+        cur.execute("SELECT 1;")
+        return {"db": "working ✅"}
+    except Exception as e:
+        # Prindem orice eroare și returnăm textul/codul ei
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Eroare la conexiunea cu baza de date: {str(e)}"
+        )
 
 @app.get("/test")
 def get_test():
@@ -106,48 +126,80 @@ def add_text(text: str, user_id: int = Depends(get_current_user)):
 
     return {"status": "text added "}
 
+
+@app.on_event("startup")
+def setup():
+    qdrant.create_payload_index(
+        collection_name="documents",
+        field_name="user_id",
+        field_schema="integer"
+    )
+
+
 @app.get("/search")
 def search(query: str, user_id: int = Depends(get_current_user)):
-    query_vector = model.encode(query).tolist()
+    try:
+        query_vector = model.encode(query).tolist()
 
-    results = qdrant.query_points(
-        collection_name="documents",
-        query=query_vector,
-        query_filter=Filter(
-            must=[
-                FieldCondition(key="user_id", match=MatchValue(value=user_id))
-            ]
-        ),
-        limit=3
-    ).points
+        results = qdrant.query_points(
+            collection_name="documents",
+            query=query_vector,
+            query_filter=Filter(
+                must=[
+                    FieldCondition(key="user_id", match=MatchValue(value=user_id))
+                ]
+            ),
+            limit=3
+        ).points
 
-    return results
+        return [
+            {
+                "id": r.id,
+                "score": r.score,
+                "payload": r.payload
+            }
+            for r in results
+        ]
 
-def extract_paragraphs_from_pdf(pdf_bytes: bytes) -> list[dict]:
-    """
-    Returnează o listă de dict-uri cu:
-      - text: textul paragrafului
-      - page: numărul paginii (1-indexed)
-    Filtrează paragrafele goale sau prea scurte (sub 30 caractere).
-    """
+    except Exception as e:
+        print("EROARE SEARCH:", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def extract_smart_chunks_from_pdf(pdf_bytes: bytes):
+    # Deschidem PDF-ul din memorie
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    paragraphs = []
+    
+    # Setăm splitter-ul inteligent
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=800,       # Dimensiunea maximă a unui chunk (în caractere)
+        chunk_overlap=150,    # Câte caractere din chunk-ul vechi păstrăm în cel nou
+        separators=["\n\n", "\n", ".", " ", ""],
+        length_function=len
+    )
 
-    for page_num, page in enumerate(doc, start=1):
-        blocks = page.get_text("blocks")
-        for block in blocks:
-            if block[6] != 0:
-                continue
-            text = block[4].strip()
-            if len(text) < 30:
-                continue
-            paragraphs.append({
-                "text": text,
-                "page": page_num,
+    chunks = []
+    
+    for page_num in range(len(doc)):
+        page_text = doc[page_num].get_text("text")
+        
+        # Curățăm whitespace-urile excesive care strică contextul
+        page_text = " ".join(page_text.split())
+        
+        if not page_text:
+            continue
+            
+        # Împărțim textul paginii în chunk-uri
+        page_chunks = text_splitter.split_text(page_text)
+        
+        for chunk in page_chunks:
+            chunks.append({
+                "text": chunk,
+                "page": page_num + 1 # Indexăm de la pagina 1
             })
+            
+    return chunks
 
-    doc.close()
-    return paragraphs
 
 @app.post("/upload-document")
 async def upload_document(
@@ -157,105 +209,101 @@ async def upload_document(
 ):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Doar fișiere PDF sunt acceptate.")
+    
     pdf_bytes = await file.read()
-    paragraphs = extract_paragraphs_from_pdf(pdf_bytes)
+    
+    # Folosim noua funcție aici:
+    chunks = extract_smart_chunks_from_pdf(pdf_bytes)
 
-    if not paragraphs:
+    if not chunks:
         raise HTTPException(
             status_code=422,
-            detail="PDF-ul nu conține text extractibil sau toate blocurile sunt prea scurte."
+            detail="PDF-ul nu conține text."
         )
 
-    points = []
-    for para in paragraphs:
-        vector = model.encode(para["text"]).tolist()
-        points.append(
-            PointStruct(
-                id=str(uuid.uuid4()),
-                vector=vector,
-                payload={
-                    "text":     para["text"],
-                    "subject":  subject,      
-                    "filename": file.filename, 
-                    "page":     para["page"], 
-                    "user_id":  user_id,
-                }
+    print(f"Încep procesarea pentru {len(chunks)} chunk-uri de text...")
+
+    batch_size = 50
+    total_uploaded = 0
+
+    for i in range(0, len(chunks), batch_size):
+        batch = chunks[i : i + batch_size]
+        points = []
+
+        for item in batch:
+            # Modelul primește acum un text mai mare, curat și cu context
+            vector = model.encode(item["text"]).tolist() 
+            points.append(
+                PointStruct(
+                    id=str(uuid.uuid4()),
+                    vector=vector,
+                    payload={
+                        "text": item["text"],
+                        "subject": subject,      
+                        "filename": file.filename, 
+                        "page": item["page"], 
+                        "user_id": user_id,
+                    }
+                )
             )
+        
+        qdrant.upsert(
+            collection_name="documents",
+            points=points,
         )
-
-    qdrant.upsert(
-        collection_name="documents",
-        points=points,
-    )
+        
+        total_uploaded += len(points)
+        print(f"Progres: {total_uploaded}/{len(chunks)} chunk-uri încărcate...")
 
     return {
-        "status":        "document uploaded ✅",
-        "filename":      file.filename,
-        "subject":       subject,
-        "total_chunks":  len(points),
+        "status": "document uploaded in batches ✅",
+        "filename": file.filename,
+        "total_chunks": len(chunks),
     }
 
+
 @app.post("/chat")
-
 async def chat(request: dict, user_id: int = Depends(get_current_user)):
-
     question = request.get("question")
-
     subject = request.get("subject", None)
 
     if not question:
-
         raise HTTPException(status_code=400, detail="Întrebarea nu poate fi goală.")
 
     # 1. Embed întrebarea
-
     query_vector = model.encode(question).tolist()
 
     # 2. Filtru user + subject
-
     query_filter = Filter(
-
         must=[
-
             FieldCondition(key="user_id", match=MatchValue(value=user_id))
-
         ]
-
     )
 
     if subject:
-
         query_filter.must.append(
-
             FieldCondition(key="subject", match=MatchValue(value=subject))
-
         )
 
     # 3. Query Qdrant
-
     results = qdrant.query_points(
-
         collection_name="documents",
-
         query=query_vector,
-
         query_filter=query_filter,
-
         limit=5
-
     ).points
 
     if not results:
-
         return {"answer": "Nu am găsit informații relevante."}
 
     # 4. Construiește contextul din chunks găsite
     context = "\n\n".join([r.payload["text"] for r in results])
 
-    # 5. Trimite la Gemini
-    prompt = f"""Ești MindCore, un asistent academic pentru studenții ULBS.
-Răspunde la întrebarea studentului folosind DOAR informațiile din contextul de mai jos.
-Dacă răspunsul nu se găsește în context, spune că nu ai informații despre asta.
+   # 5. Trimite la Groq cu un prompt de "Profesor/Tutor"
+    prompt = f"""Ești MindCore, un asistent academic și un tutore răbdător pentru studenții ULBS.
+Răspunde la întrebarea studentului pornind de la contextul de mai jos. 
+Sarcina ta este să folosești informația din context ca bază, dar SĂ O EXPLICI detaliat. 
+Ai voie să adaugi explicații suplimentare, să detaliezi conceptele și să folosești cunoștințele tale generale pentru a ajuta studentul să înțeleagă cât mai bine subiectul. Fii prietenos, folosește un ton educațional și dezvoltă ideea astfel încât răspunsul să fie amplu și util.
 
 Context:
 {context}
@@ -266,15 +314,26 @@ Răspuns:"""
 
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.6  # 👈 Am crescut temperatura ca să fie creativ în explicații
     )
+
+    # 6. Extragem sursele unice (fără duplicate)
+    unique_sources = []
+    seen = set()
+    for r in results:
+        source_id = (r.payload["filename"], r.payload["page"])
+        if source_id not in seen:
+            seen.add(source_id)
+            unique_sources.append({"filename": r.payload["filename"], "page": r.payload["page"]})
+
+    # 7. Returnăm răspunsul curat către frontend
     return {
         "answer": response.choices[0].message.content,
-        "sources": [
-            {"filename": r.payload["filename"], "page": r.payload["page"]}
-            for r in results
-    ]
-}
+        "sources": unique_sources
+    }
+
+
 
 def hash_password(password):
     return pwd_context.hash(password)
