@@ -265,15 +265,51 @@ async def upload_document(
 @app.post("/chat")
 async def chat(request: dict, user_id: int = Depends(get_current_user)):
     question = request.get("question")
+    conversation_id = request.get("conversation_id")
     subject = request.get("subject", None)
 
     if not question:
         raise HTTPException(status_code=400, detail="Întrebarea nu poate fi goală.")
 
-    # 1. Embed întrebarea
+    if not conversation_id:
+        raise HTTPException(status_code=400, detail="conversation_id is required")
+
+    # --------------------------------------------------
+    # 1. SALVEAZĂ MESAJUL USERULUI
+    # --------------------------------------------------
+    cur.execute(
+        """
+        INSERT INTO "MindCore".messages (conversation_id, role, content)
+        VALUES (%s, %s, %s)
+        """,
+        (conversation_id, "user", question)
+    )
+    conn.commit()
+
+    # --------------------------------------------------
+    # 2. IA ISTORICUL CONVERSAȚIEI
+    # --------------------------------------------------
+    cur.execute(
+        """
+        SELECT role, content
+        FROM "MindCore".messages
+        WHERE conversation_id = %s
+        ORDER BY created_at ASC
+        """,
+        (conversation_id,)
+    )
+
+    history = cur.fetchall()
+
+    history_text = "\n".join(
+        [f"{role}: {content}" for role, content in history]
+    )
+
+    # --------------------------------------------------
+    # 3. QDRANT SEARCH (RAG)
+    # --------------------------------------------------
     query_vector = model.encode(question).tolist()
 
-    # 2. Filtru user + subject
     query_filter = Filter(
         must=[
             FieldCondition(key="user_id", match=MatchValue(value=user_id))
@@ -285,7 +321,6 @@ async def chat(request: dict, user_id: int = Depends(get_current_user)):
             FieldCondition(key="subject", match=MatchValue(value=subject))
         )
 
-    # 3. Query Qdrant
     results = qdrant.query_points(
         collection_name="documents",
         query=query_vector,
@@ -296,44 +331,73 @@ async def chat(request: dict, user_id: int = Depends(get_current_user)):
     if not results:
         return {"answer": "Nu am găsit informații relevante."}
 
-    # 4. Construiește contextul din chunks găsite
     context = "\n\n".join([r.payload["text"] for r in results])
 
-   # 5. Trimite la Groq cu un prompt de "Profesor/Tutor"
-    prompt = f"""Ești MindCore, un asistent academic și un tutore răbdător pentru studenții ULBS.
-Răspunde la întrebarea studentului pornind de la contextul de mai jos. 
-Sarcina ta este să folosești informația din context ca bază, dar SĂ O EXPLICI detaliat. 
-Ai voie să adaugi explicații suplimentare, să detaliezi conceptele și să folosești cunoștințele tale generale pentru a ajuta studentul să înțeleagă cât mai bine subiectul. Fii prietenos, folosește un ton educațional și dezvoltă ideea astfel încât răspunsul să fie amplu și util.
+    # --------------------------------------------------
+    # 4. PROMPT PENTRU AI
+    # --------------------------------------------------
+    prompt = f"""
+Ești MindCore, un tutor AI pentru studenți.
 
-Context:
+ISTORIC CONVERSAȚIE:
+{history_text}
+
+CONTEXT DIN DOCUMENTE:
 {context}
 
-Întrebarea studentului: {question}
+ÎNTREBAREA:
+{question}
 
-Răspuns:"""
+Răspunde clar, educațional și explicativ.
+"""
 
+    # --------------------------------------------------
+    # 5. CHEMARE LLM (GROQ)
+    # --------------------------------------------------
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.6  # 👈 Am crescut temperatura ca să fie creativ în explicații
+        messages=[
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.6
     )
 
-    # 6. Extragem sursele unice (fără duplicate)
+    answer = response.choices[0].message.content
+
+    # --------------------------------------------------
+    # 6. SALVEAZĂ RĂSPUNSUL AI
+    # --------------------------------------------------
+    cur.execute(
+        """
+        INSERT INTO "MindCore".messages (conversation_id, role, content)
+        VALUES (%s, %s, %s)
+        """,
+        (conversation_id, "assistant", answer)
+    )
+    conn.commit()
+
+    # --------------------------------------------------
+    # 7. SURSE (din Qdrant)
+    # --------------------------------------------------
     unique_sources = []
     seen = set()
+
     for r in results:
         source_id = (r.payload["filename"], r.payload["page"])
         if source_id not in seen:
             seen.add(source_id)
-            unique_sources.append({"filename": r.payload["filename"], "page": r.payload["page"]})
+            unique_sources.append({
+                "filename": r.payload["filename"],
+                "page": r.payload["page"]
+            })
 
-    # 7. Returnăm răspunsul curat către frontend
+    # --------------------------------------------------
+    # 8. RESPONSE FINAL
+    # --------------------------------------------------
     return {
-        "answer": response.choices[0].message.content,
+        "answer": answer,
         "sources": unique_sources
     }
-
-
 
 def hash_password(password):
     return pwd_context.hash(password)
@@ -403,3 +467,24 @@ def login(data: dict = Body(...)):
     token = create_token({"user_id": user_id})
 
     return {"access_token": token}
+
+@app.post("/create-conversation")
+def create_conversation(user_id: int = Depends(get_current_user)):
+    try:
+        # Tot ce e în interiorul funcției trebuie să aibă 4 spații la început
+        cur.execute(
+            'INSERT INTO "MindCore".conversations (user_id, title) VALUES (%s, %s) RETURNING id',
+            (user_id, "New chat")
+        )
+        
+        # Rezultatul trebuie luat înainte de commit
+        conversation_id = cur.fetchone()[0]
+        conn.commit()
+        
+        return {"conversation_id": conversation_id}
+        
+    except Exception as e:
+        # Dacă apare o eroare, dăm rollback ca să nu blocăm conexiunea
+        conn.rollback()
+        print(f"Eroare: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
