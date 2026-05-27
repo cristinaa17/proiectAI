@@ -39,8 +39,10 @@ app.add_middleware(
     allow_headers=["*"], # Permite toate headerele
 )
 
-conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-cur = conn.cursor()
+def get_db():
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    cur = conn.cursor()
+    return conn, cur
 
 qdrant = QdrantClient(
     url=os.getenv("QDRANT_URL"),
@@ -76,16 +78,28 @@ from fastapi import HTTPException
 
 @app.get("/test-db")
 def test_db():
+
+    conn, cur = get_db()
+
     try:
         cur.execute("SELECT 1;")
-        return {"db": "working ✅"}
-    except Exception as e:
-        # Prindem orice eroare și returnăm textul/codul ei
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Eroare la conexiunea cu baza de date: {str(e)}"
-        )
 
+        cur.close()
+        conn.close()
+
+        return {"db": "working ✅"}
+
+    except Exception as e:
+
+        cur.close()
+        conn.close()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Eroare DB: {str(e)}"
+        )
+        
+        
 @app.get("/test")
 def get_test():
     cur = conn.cursor()
@@ -139,18 +153,26 @@ def setup():
 @app.get("/search")
 def search(query: str, user_id: int = Depends(get_current_user)):
     try:
+
+        print("QUERY:", query)
+
         query_vector = model.encode(query).tolist()
 
         results = qdrant.query_points(
             collection_name="documents",
             query=query_vector,
-            query_filter=Filter(
-                must=[
-                    FieldCondition(key="user_id", match=MatchValue(value=user_id))
-                ]
-            ),
-            limit=3
+            limit=10
         ).points
+
+        print("\n===== RESULTS =====")
+
+        for r in results:
+            print("SCORE:", r.score)
+
+            if r.payload:
+                print("TEXT:", r.payload.get("text", "")[:200])
+
+            print("----------------")
 
         return [
             {
@@ -263,16 +285,32 @@ async def upload_document(
 
 
 @app.post("/chat")
-async def chat(request: dict, user_id: int = Depends(get_current_user)):
+async def chat(request: dict, current_user=Depends(get_current_user)):
+
+    conn, cur = get_db()
+
     question = request.get("question")
     conversation_id = request.get("conversation_id")
     subject = request.get("subject", None)
 
+    print("CURRENT USER:", current_user)
+
     if not question:
-        raise HTTPException(status_code=400, detail="Întrebarea nu poate fi goală.")
+        raise HTTPException(
+            status_code=400,
+            detail="Întrebarea nu poate fi goală."
+        )
 
     if not conversation_id:
-        raise HTTPException(status_code=400, detail="conversation_id is required")
+        raise HTTPException(
+            status_code=400,
+            detail="conversation_id is required"
+        )
+
+    # --------------------------------------------------
+    # USER ID DIN JWT
+    # --------------------------------------------------
+    user_id = current_user
 
     # --------------------------------------------------
     # 1. SALVEAZĂ MESAJUL USERULUI
@@ -310,58 +348,82 @@ async def chat(request: dict, user_id: int = Depends(get_current_user)):
     # --------------------------------------------------
     query_vector = model.encode(question).tolist()
 
-    query_filter = Filter(
-        must=[
-            FieldCondition(key="user_id", match=MatchValue(value=user_id))
-        ]
-    )
-
-    if subject:
-        query_filter.must.append(
-            FieldCondition(key="subject", match=MatchValue(value=subject))
-        )
-
     results = qdrant.query_points(
         collection_name="documents",
         query=query_vector,
-        query_filter=query_filter,
-        limit=5
+        query_filter=Filter(
+            must=[
+                FieldCondition(
+                    key="user_id",
+                    match=MatchValue(value=user_id)
+                )
+            ]
+        ),
+        limit=10
     ).points
+
+    print("\n\n===== QDRANT RESULTS =====")
+
+    for r in results:
+        print("SCORE:", r.score)
+        print("TEXT:", r.payload["text"][:300])
+        print("--------------------")
+
+    print("QDRANT RESULTS:", results)
 
     if not results:
         return {"answer": "Nu am găsit informații relevante."}
 
-    context = "\n\n".join([r.payload["text"] for r in results])
+    context = "\n\n".join([
+        r.payload["text"] for r in results
+    ])
 
-    # --------------------------------------------------
+    print("CONTEXT:", context[:500])
+
+     # --------------------------------------------------
     # 4. PROMPT PENTRU AI
     # --------------------------------------------------
-    prompt = f"""
-Ești MindCore, un tutor AI pentru studenți.
 
-ISTORIC CONVERSAȚIE:
+    prompt = f"""
+Ești MindCore, un asistent AI academic pentru studenți.
+
+Folosește STRICT informațiile din CONTEXT.
+Dacă informația nu există în context, spune clar:
+„Nu am găsit informația în cursurile încărcate.”
+
+Explică:
+- clar
+- structurat
+- academic
+- pe înțelesul studentului
+
+Folosește liste și subtitluri când este nevoie.
+
+ISTORIC:
 {history_text}
 
-CONTEXT DIN DOCUMENTE:
+CONTEXT:
 {context}
 
-ÎNTREBAREA:
+ÎNTREBARE:
 {question}
-
-Răspunde clar, educațional și explicativ.
 """
 
     # --------------------------------------------------
     # 5. CHEMARE LLM (GROQ)
     # --------------------------------------------------
+
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "user", "content": prompt}
+            {
+                "role": "user",
+                "content": prompt
+            }
         ],
         temperature=0.6
     )
-
+    
     answer = response.choices[0].message.content
 
     # --------------------------------------------------
@@ -383,9 +445,14 @@ Răspunde clar, educațional și explicativ.
     seen = set()
 
     for r in results:
-        source_id = (r.payload["filename"], r.payload["page"])
+        source_id = (
+            r.payload["filename"],
+            r.payload["page"]
+        )
+
         if source_id not in seen:
             seen.add(source_id)
+
             unique_sources.append({
                 "filename": r.payload["filename"],
                 "page": r.payload["page"]
@@ -394,25 +461,19 @@ Răspunde clar, educațional și explicativ.
     # --------------------------------------------------
     # 8. RESPONSE FINAL
     # --------------------------------------------------
+    
+    cur.close()
+    conn.close()
+
     return {
         "answer": answer,
         "sources": unique_sources
     }
 
-def hash_password(password):
-    return pwd_context.hash(password)
-
-def verify_password(password, hashed):
-    return pwd_context.verify(password, hashed)
-
-def create_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=60)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
 @app.post("/register")
 def register(request: dict):
+
+    conn, cur = get_db()
     email = request.get("email")
     password = request.get("password")
 
@@ -430,7 +491,8 @@ def register(request: dict):
             (email, hashed)
         )
         conn.commit()
-
+        cur.close()
+        conn.close()
         return {"message": "user created"}
 
     except psycopg2.errors.UniqueViolation:
@@ -440,28 +502,45 @@ def register(request: dict):
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
+def hash_password(password):
+    return pwd_context.hash(password)
+
+def verify_password(password, hashed):
+    return pwd_context.verify(password, hashed)
+
+def create_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=60)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 @app.post("/login")
-
 def login(data: dict = Body(...)):
 
     email = data.get("email")
-
     password = data.get("password")
 
-    cur.execute('SELECT id, password_hash FROM "MindCore".users WHERE email=%s', (email,))
+    conn, cur = get_db()
+
+    cur.execute(
+        'SELECT id, password_hash FROM "MindCore".users WHERE email=%s',
+        (email,)
+    )
 
     user = cur.fetchone()
 
-    if not user:
+    cur.close()
+    conn.close()
 
+    if not user:
         raise HTTPException(status_code=400, detail="User not found")
 
     user_id, hashed_password = user
 
     if not verify_password(password, hashed_password):
-
         raise HTTPException(status_code=400, detail="Wrong password")
 
     token = create_token({"user_id": user_id})
@@ -470,21 +549,34 @@ def login(data: dict = Body(...)):
 
 @app.post("/create-conversation")
 def create_conversation(user_id: int = Depends(get_current_user)):
+
+    conn, cur = get_db()
+
     try:
-        # Tot ce e în interiorul funcției trebuie să aibă 4 spații la început
+
         cur.execute(
-            'INSERT INTO "MindCore".conversations (user_id, title) VALUES (%s, %s) RETURNING id',
+            '''
+            INSERT INTO "MindCore".conversations (user_id, title)
+            VALUES (%s, %s)
+            RETURNING id
+            ''',
             (user_id, "New chat")
         )
-        
-        # Rezultatul trebuie luat înainte de commit
+
         conversation_id = cur.fetchone()[0]
+
         conn.commit()
-        
+
+        cur.close()
+        conn.close()
+
         return {"conversation_id": conversation_id}
-        
+
     except Exception as e:
-        # Dacă apare o eroare, dăm rollback ca să nu blocăm conexiunea
+
         conn.rollback()
-        print(f"Eroare: {e}")
+
+        cur.close()
+        conn.close()
+
         raise HTTPException(status_code=500, detail=str(e))

@@ -37,7 +37,7 @@ services:
 
     env_file:
 
-      - .env
+      - ./backend/.env
   qdrant:
     image: qdrant/qdrant:latest
     restart: always

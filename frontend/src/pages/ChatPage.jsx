@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { FileText, MessageSquare, MoreHorizontal, Sparkles, Star } from 'lucide-react';
-import ChatSidebar from './ChatSidebar';
+import ChatSidebar from './Chatsidebar';
 import ChatMessage, { TypingIndicator } from './ChatMessage';
 import ChatInput from './ChatInput';
 import './Chat.css';
@@ -41,9 +41,15 @@ export default function ChatPage() {
   const endRef = useRef(null);
 
   // Conversația activă
-  const activeChat = activeId ? chats[activeId] : null;
-  const messages = activeChat ? activeChat.messages : [makeInitialMsg()];
-  const chatTitle = activeChat ? activeChat.title : 'Conversație nouă';
+  const activeChat = chats[activeId] || null;
+
+  const messages =
+    activeChat?.messages?.length
+      ? activeChat.messages
+      : [makeInitialMsg()];
+
+  const chatTitle =
+    activeChat?.title || 'Conversație nouă';
 
   // Istoric pentru sidebar (pinned primii, apoi desc după createdAt)
   const history = Object.values(chats).sort((a, b) => {
@@ -64,99 +70,172 @@ export default function ChatPage() {
   };
 
   // ── Send message ─────────────────────────────────────────────
-const handleSend = async () => {
-      if (!input.trim() || isTyping) return;
+  const handleSend = async () => {
 
-    const t = new Date().toLocaleTimeString('ro', { hour: '2-digit', minute: '2-digit' });
-    const userMsg = { id: Date.now(), role: 'user', content: input, time: t };
+    if (!input.trim() || isTyping) return;
+
+    const token = localStorage.getItem('token')
+
+    const t = new Date().toLocaleTimeString('ro', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    const userMsg = {
+      id: Date.now(),
+      role: 'user',
+      content: input,
+      time: t
+    };
 
     let chatId = activeId;
 
-    if (!chatId) {
-      // ── Primul mesaj: creăm conversația cu titlu auto-generat ──
-      chatId = `chat-${Date.now()}`;
-      const newChat = {
-        id: chatId,
-        title: generateTitle(input),   // <── titlu automat din textul userului
-        date: todayLabel(),
-        pinned: false,
-        createdAt: Date.now(),
-        messages: [makeInitialMsg(), userMsg],
-      };
-      setChats(prev => ({ ...prev, [chatId]: newChat }));
-      setActiveId(chatId);
-    } else {
-  setChats(prev => ({
-    ...prev,
-    [chatId]: {
-      ...prev[chatId],
-      messages: [...prev[chatId].messages, userMsg],
-    },
-  }));
-}
+    try {
 
-    const userInput = input;   // ✅ salvăm mesajul
-setInput('');
-setIsTyping(true);
+      // ─────────────────────────────────────
+      // Creează conversație nouă
+      // ─────────────────────────────────────
+      if (!chatId) {
 
-const capturedId = chatId;
-const token = localStorage.getItem('token')
+        const createRes = await fetch('http://localhost:8000/create-conversation', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
 
-try {
-  const res = await fetch('http://localhost:8000/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify({
-      question: userInput   // ✅ folosim valoarea salvată
-    })
-  })
+        const createData = await createRes.json()
 
-  const data = await res.json()
+        chatId = createData.conversation_id
 
-  setIsTyping(false)
+        const newChat = {
+          id: chatId,
+          title: generateTitle(input),
+          date: todayLabel(),
+          pinned: false,
+          createdAt: Date.now(),
+          messages: [makeInitialMsg(), userMsg],
+        }
 
-  const botMsg = {
-    id: Date.now() + 1,
-    role: 'assistant',
-    content: data.answer,
-    time: new Date().toLocaleTimeString('ro', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }),
-  }
+        setChats(prev => ({
+          ...prev,
+          [chatId]: newChat
+        }))
 
-  setChats(prev => ({
-  ...prev,
-  [capturedId]: {
-    ...prev[capturedId],
-    messages: [...prev[capturedId].messages, botMsg],
-  },
-}))
+        setActiveId(chatId)
 
-} catch (err) {
-  setIsTyping(false)
+        await new Promise(resolve => setTimeout(resolve, 0))
 
-  const errorMsg = {
-    id: Date.now() + 1,
-    role: 'assistant',
-    content: 'Eroare la conectarea cu serverul.',
-    time: new Date().toLocaleTimeString('ro', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }),
-  }
+      } else {
 
-  setChats(prev => ({
-    ...prev,
-    [capturedId]: {
-      ...prev[capturedId],
-      messages: [...prev[capturedId].messages, errorMsg],
-    },
-  }))
-}
+        // ─────────────────────────────────────
+        // Adaugă mesaj user
+        // ─────────────────────────────────────
+        setChats(prev => {
+
+          const existingMessages =
+            prev[chatId]?.messages || []
+
+          return {
+            ...prev,
+            [chatId]: {
+              ...prev[chatId],
+              messages: [
+                ...existingMessages,
+                userMsg
+              ],
+            },
+          }
+        })
+      }
+
+      const userInput = input;
+
+      setInput('');
+      setIsTyping(true);
+
+      // ─────────────────────────────────────
+      // Request backend
+      // ─────────────────────────────────────
+      const res = await fetch('http://localhost:8000/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          question: userInput,
+          conversation_id: chatId
+        })
+      })
+
+      const data = await res.json()
+
+      setIsTyping(false)
+
+      const botMsg = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: data.answer || 'Nu am primit răspuns.',
+        time: new Date().toLocaleTimeString('ro', {
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+      }
+
+      // ─────────────────────────────────────
+      // Adaugă răspuns AI
+      // ─────────────────────────────────────
+      setChats(prev => {
+
+        const existingMessages =
+          prev[chatId]?.messages || []
+
+        return {
+          ...prev,
+          [chatId]: {
+            ...prev[chatId],
+            messages: [
+              ...existingMessages,
+              botMsg
+            ],
+          },
+        }
+      })
+
+    } catch (err) {
+
+      console.error(err)
+
+      setIsTyping(false)
+
+      const errorMsg = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: 'Eroare la conectarea cu serverul.',
+        time: new Date().toLocaleTimeString('ro', {
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+      }
+
+      setChats(prev => {
+
+        const existingMessages =
+          prev[chatId]?.messages || []
+
+        return {
+          ...prev,
+          [chatId]: {
+            ...prev[chatId],
+            messages: [
+              ...existingMessages,
+              errorMsg
+            ],
+          },
+        }
+      })
+    }
   };
 
   // ── Switch chat ──────────────────────────────────────────────
