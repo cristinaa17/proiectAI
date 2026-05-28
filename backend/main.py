@@ -102,9 +102,15 @@ def test_db():
         
 @app.get("/test")
 def get_test():
-    cur = conn.cursor()
+
+    conn, cur = get_db()
+
     cur.execute("SELECT * FROM test;")
     rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
     return {"data": rows}
 
 @app.post("/create-collection")
@@ -343,6 +349,7 @@ async def chat(request: dict, current_user=Depends(get_current_user)):
         [f"{role}: {content}" for role, content in history]
     )
 
+
     # --------------------------------------------------
     # 3. QDRANT SEARCH (RAG)
     # --------------------------------------------------
@@ -385,6 +392,8 @@ async def chat(request: dict, current_user=Depends(get_current_user)):
     # --------------------------------------------------
 
     prompt = f"""
+
+
 Ești MindCore, un asistent AI academic pentru studenți.
 
 Folosește STRICT informațiile din CONTEXT.
@@ -575,6 +584,106 @@ def create_conversation(user_id: int = Depends(get_current_user)):
     except Exception as e:
 
         conn.rollback()
+
+        cur.close()
+        conn.close()
+
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.get("/conversations")
+def get_conversations(user_id: int = Depends(get_current_user)):
+
+    conn, cur = get_db()
+
+    try:
+
+        cur.execute(
+            '''
+            SELECT id, title, created_at
+            FROM "MindCore".conversations
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            ''',
+            (user_id,)
+        )
+
+        rows = cur.fetchall()
+
+        conversations = []
+
+        for row in rows:
+            conversations.append({
+                "id": row[0],
+                "title": row[1],
+                "created_at": row[2]
+            })
+
+        cur.close()
+        conn.close()
+
+        return conversations
+
+    except Exception as e:
+
+        cur.close()
+        conn.close()
+
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/conversations/{conversation_id}/messages")
+def get_messages(
+    conversation_id: int,
+    user_id: int = Depends(get_current_user)
+):
+
+    conn, cur = get_db()
+
+    try:
+
+        cur.execute(
+            '''
+            SELECT id
+            FROM "MindCore".conversations
+            WHERE id = %s AND user_id = %s
+            ''',
+            (conversation_id, user_id)
+        )
+
+        conversation = cur.fetchone()
+
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        cur.execute(
+            '''
+            SELECT id, role, content, created_at
+            FROM "MindCore".messages
+            WHERE conversation_id = %s
+            ORDER BY created_at ASC
+            ''',
+            (conversation_id,)
+        )
+
+        rows = cur.fetchall()
+
+        messages = []
+
+        for row in rows:
+            messages.append({
+                "id": row[0],
+                "role": row[1],
+                "content": row[2],
+                "created_at": row[3]
+            })
+
+        cur.close()
+        conn.close()
+
+        return messages
+
+    except Exception as e:
 
         cur.close()
         conn.close()

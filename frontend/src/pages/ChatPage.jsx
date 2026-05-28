@@ -62,12 +62,50 @@ export default function ChatPage() {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
+  // ── Load conversations din backend ──────────────────────────
+useEffect(() => {
+  loadConversations()
+}, [])
+
   // ── New Chat ─────────────────────────────────────────────────
   const handleNewChat = () => {
     setActiveId(null);
     setInput('');
     setIsTyping(false);
   };
+
+  const loadConversations = async () => {
+
+  try {
+
+    const token = localStorage.getItem('token')
+
+    const res = await fetch('http://localhost:8000/conversations', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+
+    const data = await res.json()
+
+    const formattedChats = {}
+
+    data.forEach(chat => {
+      formattedChats[chat.id] = {
+        id: chat.id,
+        title: chat.title,
+        createdAt: new Date(chat.created_at).getTime(),
+        pinned: false,
+        messages: []
+      }
+    })
+
+    setChats(formattedChats)
+
+  } catch (err) {
+    console.error(err)
+  }
+}
 
   // ── Send message ─────────────────────────────────────────────
   const handleSend = async () => {
@@ -239,12 +277,50 @@ export default function ChatPage() {
   };
 
   // ── Switch chat ──────────────────────────────────────────────
-  const handleSetActive = (id) => {
-    setActiveId(id);
-    const userInput = input
-    setInput('');
-    setIsTyping(false);
-  };
+const handleSetActive = async (id) => {
+
+  setActiveId(id)
+
+  try {
+
+    const token = localStorage.getItem('token')
+
+    const res = await fetch(
+      `http://localhost:8000/conversations/${id}/messages`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    )
+
+    const data = await res.json()
+
+    const formattedMessages = data.map(msg => ({
+      id: msg.id,
+      role: msg.role,
+      content: msg.content,
+      time: new Date(msg.created_at).toLocaleTimeString('ro', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }))
+
+    setChats(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        messages: formattedMessages
+      }
+    }))
+
+    setInput('')
+    setIsTyping(false)
+
+  } catch (err) {
+    console.error(err)
+  }
+};
 
   // ── Pin / Delete ─────────────────────────────────────────────
   const handlePin = (id) => {

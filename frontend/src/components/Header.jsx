@@ -8,7 +8,7 @@ export default function Header() {
 const [token, setToken] = useState(null)
 
 const storedUser = localStorage.getItem('user')
-const user = storedUser ? JSON.parse(storedUser) : null
+const user = storedUser || null
 
 useEffect(() => {
   const storedToken = localStorage.getItem('token')
@@ -36,7 +36,7 @@ const handleLogout = () => {
       <div className="header-right">
         {token ? (
           <>
-          <span className="user">{user?.email}</span>
+          <span className="user">{user}</span>
           <button onClick={handleLogout} className="login-btn small">
       Logout
     </button>
