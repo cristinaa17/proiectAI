@@ -147,7 +147,8 @@ export default function ChatSidebar({
   onPin,
   onDelete,
   onDocumentsChange,
-  onLogout
+  onLogout,
+  onSpecialMode
 }) {
 
   const navigate = useNavigate();
@@ -275,6 +276,34 @@ export default function ChatSidebar({
         <Plus size={16} />
         <span>Conversație nouă</span>
       </button>
+
+      {/* Quick modes */}
+      {onSpecialMode && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          <button
+            onClick={() => onSpecialMode('quiz')}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)',
+              color: '#818cf8', borderRadius: 10, padding: '7px 0',
+              fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            🧠 Quiz
+          </button>
+          <button
+            onClick={() => onSpecialMode('flashcards')}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)',
+              color: '#4ade80', borderRadius: 10, padding: '7px 0',
+              fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            🃏 Flashcards
+          </button>
+        </div>
+      )}
 
       {/* Search */}
       <div className="sidebar-search">

@@ -4,12 +4,11 @@ import { FileText, MessageSquare, MoreHorizontal, Sparkles, Star } from 'lucide-
 import ChatSidebar from './Chatsidebar';
 import ChatMessage, { TypingIndicator } from './ChatMessage';
 import ChatInput from './ChatInput';
+import QuizMode from './QuizMode';
+import FlashcardsMode from './FlashcardsMode';
 import './Chat.css';
 
-// Prompturi predefinite pentru fiecare mod
 const MODE_PROMPTS = {
-  quiz: 'Generează 5 întrebări de tip quiz din cursurile mele încărcate, cu variante de răspuns (A/B/C/D) și răspunsul corect la final.',
-  flashcards: 'Creează 8 cartonașe de memorare (flashcards) din cursurile mele. Format: **Termen:** ... | **Definiție:** ...',
   studyplan: 'Creează un ghid de studiu structurat pe baza cursurilor mele încărcate: capitole principale, concepte cheie și ordinea recomandată de parcurgere.',
 };
 
@@ -40,20 +39,36 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [documentsCount, setDocumentsCount] = useState(0);
+  const [viewMode, setViewMode] = useState('chat');
+  const [quizConversationId, setQuizConversationId] = useState(null);
   const endRef = useRef(null);
   const [searchParams] = useSearchParams();
 
-  // Pre-populeaza inputul daca vine din Home cu un mod specific
   useEffect(() => {
     const mode = searchParams.get('mode');
-    if (mode && MODE_PROMPTS[mode]) {
+    if (mode === 'quiz' || mode === 'flashcards') {
+      initSpecialMode(mode);
+    } else if (mode && MODE_PROMPTS[mode]) {
       setInput(MODE_PROMPTS[mode]);
     }
   }, []);
 
-  useEffect(() => {
-    loadConversations();
-  }, []);
+  useEffect(() => { loadConversations(); }, []);
+
+  const initSpecialMode = async (mode) => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:8000/api/chat/conversation', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setQuizConversationId(data.conversation_id);
+      setViewMode(mode);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const loadConversations = async () => {
     try {
@@ -74,9 +89,7 @@ export default function ChatPage() {
         };
       });
       setChats(chatsObj);
-    } catch (err) {
-      console.error(err);
-    }
+    } catch (err) { console.error(err); }
   };
 
   const activeChat = chats[activeId] || null;
@@ -96,6 +109,7 @@ export default function ChatPage() {
     setActiveId(null);
     setInput('');
     setIsTyping(false);
+    setViewMode('chat');
   };
 
   const handleSend = async () => {
@@ -109,18 +123,13 @@ export default function ChatPage() {
       if (!chatId) {
         const createRes = await fetch('http://localhost:8000/api/chat/conversation', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` }
         });
         const createData = await createRes.json();
         chatId = createData.conversation_id;
-
         const newChat = {
-          id: chatId,
-          title: generateTitle(input),
-          date: todayLabel(),
-          pinned: false,
-          createdAt: Date.now(),
-          messages: [makeInitialMsg(), userMsg],
+          id: chatId, title: generateTitle(input), date: todayLabel(),
+          pinned: false, createdAt: Date.now(), messages: [makeInitialMsg(), userMsg],
         };
         setChats(prev => ({ ...prev, [chatId]: newChat }));
         setActiveId(chatId);
@@ -128,10 +137,7 @@ export default function ChatPage() {
       } else {
         setChats(prev => ({
           ...prev,
-          [chatId]: {
-            ...prev[chatId],
-            messages: [...(prev[chatId]?.messages || []), userMsg],
-          },
+          [chatId]: { ...prev[chatId], messages: [...(prev[chatId]?.messages || []), userMsg] },
         }));
       }
 
@@ -141,18 +147,14 @@ export default function ChatPage() {
 
       const res = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ question: userInput, conversation_id: chatId })
       });
       const data = await res.json();
       setIsTyping(false);
 
       const botMsg = {
-        id: Date.now() + 1,
-        role: 'assistant',
+        id: Date.now() + 1, role: 'assistant',
         content: data.answer || 'Nu am primit răspuns.',
         sources: data.sources || [],
         time: new Date().toLocaleTimeString('ro', { hour: '2-digit', minute: '2-digit' }),
@@ -160,27 +162,19 @@ export default function ChatPage() {
 
       setChats(prev => ({
         ...prev,
-        [chatId]: {
-          ...prev[chatId],
-          messages: [...(prev[chatId]?.messages || []), botMsg],
-        },
+        [chatId]: { ...prev[chatId], messages: [...(prev[chatId]?.messages || []), botMsg] },
       }));
-
     } catch (err) {
       console.error(err);
       setIsTyping(false);
       const errorMsg = {
-        id: Date.now() + 1,
-        role: 'assistant',
+        id: Date.now() + 1, role: 'assistant',
         content: 'Eroare la conectarea cu serverul.',
         time: new Date().toLocaleTimeString('ro', { hour: '2-digit', minute: '2-digit' }),
       };
       setChats(prev => ({
         ...prev,
-        [chatId]: {
-          ...prev[chatId],
-          messages: [...(prev[chatId]?.messages || []), errorMsg],
-        },
+        [chatId]: { ...prev[chatId], messages: [...(prev[chatId]?.messages || []), errorMsg] },
       }));
     }
   };
@@ -197,27 +191,20 @@ export default function ChatPage() {
         [id]: {
           ...prev[id],
           messages: msgs.map(m => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
+            id: m.id, role: m.role, content: m.content,
             time: new Date(m.created_at).toLocaleTimeString('ro', { hour: '2-digit', minute: '2-digit' })
           }))
         }
       }));
       setActiveId(id);
-    } catch (err) {
-      console.error(err);
-    }
+      setViewMode('chat');
+    } catch (err) { console.error(err); }
   };
 
   const handlePin = (id) => {
-    setChats(prev => ({
-      ...prev,
-      [id]: { ...prev[id], pinned: !prev[id].pinned },
-    }));
+    setChats(prev => ({ ...prev, [id]: { ...prev[id], pinned: !prev[id].pinned } }));
   };
 
-  // DELETE real catre backend
   const handleDelete = async (id) => {
     try {
       const token = localStorage.getItem('token');
@@ -225,14 +212,8 @@ export default function ChatPage() {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
-    } catch (err) {
-      console.error('Delete failed:', err);
-    }
-    setChats(prev => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+    } catch (err) { console.error(err); }
+    setChats(prev => { const next = { ...prev }; delete next[id]; return next; });
     if (activeId === id) setActiveId(null);
   };
 
@@ -242,23 +223,26 @@ export default function ChatPage() {
     window.location.href = '/login';
   };
 
-  return (
-    <div className="chat-universe">
-      <div className="aurora-bg" />
-      <div className="aurora-bg-2" />
+  const renderMain = () => {
+    if (viewMode === 'quiz' && quizConversationId) {
+      return (
+        <QuizMode
+          conversationId={quizConversationId}
+          onClose={() => setViewMode('chat')}
+        />
+      );
+    }
+    if (viewMode === 'flashcards' && quizConversationId) {
+      return (
+        <FlashcardsMode
+          conversationId={quizConversationId}
+          onClose={() => setViewMode('chat')}
+        />
+      );
+    }
 
-      <ChatSidebar
-        history={history}
-        activeChat={activeId}
-        setActiveChat={handleSetActive}
-        onNewChat={handleNewChat}
-        onPin={handlePin}
-        onDelete={handleDelete}
-        onDocumentsChange={setDocumentsCount}
-        onLogout={handleLogout}
-      />
-
-      <main className="chat-main">
+    return (
+      <>
         <header className="chat-topbar">
           <div className="topbar-left">
             <div className="topbar-chat-title">
@@ -273,9 +257,7 @@ export default function ChatPage() {
           <div className="topbar-right">
             <button className="topbar-icon-btn"><Star size={15} /></button>
             <button className="topbar-icon-btn"><MoreHorizontal size={15} /></button>
-            <div className="model-badge">
-              <Sparkles size={11} /> MindCore AI
-            </div>
+            <div className="model-badge"><Sparkles size={11} /> MindCore AI</div>
           </div>
         </header>
 
@@ -293,6 +275,29 @@ export default function ChatPage() {
           handleSend={handleSend}
           isTyping={isTyping}
         />
+      </>
+    );
+  };
+
+  return (
+    <div className="chat-universe">
+      <div className="aurora-bg" />
+      <div className="aurora-bg-2" />
+
+      <ChatSidebar
+        history={history}
+        activeChat={activeId}
+        setActiveChat={handleSetActive}
+        onNewChat={handleNewChat}
+        onPin={handlePin}
+        onDelete={handleDelete}
+        onDocumentsChange={setDocumentsCount}
+        onLogout={handleLogout}
+        onSpecialMode={initSpecialMode}
+      />
+
+      <main className="chat-main">
+        {renderMain()}
       </main>
     </div>
   );
