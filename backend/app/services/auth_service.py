@@ -6,11 +6,8 @@ from app.security.security import create_token, hash_password, verify_password
 
 
 def register_user(email: str, password: str) -> dict:
-    if not email or not email.lower().strip().endswith("@ulbsibiu.ro"):
-        raise HTTPException(
-            status_code=400,
-            detail="Doar email-urile @ulbsibiu.ro sunt acceptate",
-        )
+    if not email:
+        raise HTTPException(status_code=400, detail="Email invalid")
 
     conn, cur = get_db()
 

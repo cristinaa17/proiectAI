@@ -6,10 +6,10 @@ import './Home.css'
 import { Brain, FileText, Layers, BookOpen } from 'lucide-react'
 
 const cards = [
-  { icon: <Brain size={20} />, title: 'Ajută-mă să învăț', description: 'Răspunsuri bazate pe cursurile tale.', color: 'card-blue' },
-  { icon: <FileText size={20} />, title: 'Testează-mă', description: 'Quiz cu feedback instant.', color: 'card-purple' },
-  { icon: <Layers size={20} />, title: 'Creează cartonașe', description: 'Flashcards automate din curs.', color: 'card-green' },
-  { icon: <BookOpen size={20} />, title: 'Ghid de studiu', description: 'Plan de recapitulare complet.', color: 'card-yellow' },
+  { icon: <Brain size={20} />, title: 'Ajută-mă să învăț', description: 'Răspunsuri bazate pe cursurile tale.', color: 'card-blue', mode: null },
+  { icon: <FileText size={20} />, title: 'Testează-mă', description: 'Quiz cu feedback instant.', color: 'card-purple', mode: 'quiz' },
+  { icon: <Layers size={20} />, title: 'Creează cartonașe', description: 'Flashcards automate din curs.', color: 'card-green', mode: 'flashcards' },
+  { icon: <BookOpen size={20} />, title: 'Ghid de studiu', description: 'Plan de recapitulare complet.', color: 'card-yellow', mode: 'studyplan' },
 ]
 
 function AuroraBackground() {
@@ -151,7 +151,7 @@ export default function Home() {
             <motion.div
               key={card.title}
               className={`feature-card ${card.color}`}
-              onClick={() => navigate('/chat')}
+              onClick={() => navigate(card.mode ? `/chat?mode=${card.mode}` : '/chat')}
               variants={itemVariants}
               whileHover={{ y: -6, scale: 1.03 }}
               transition={{ type: 'spring', stiffness: 300 }}

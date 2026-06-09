@@ -1,9 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { FileText, MessageSquare, MoreHorizontal, Sparkles, Star } from 'lucide-react';
 import ChatSidebar from './Chatsidebar';
 import ChatMessage, { TypingIndicator } from './ChatMessage';
 import ChatInput from './ChatInput';
 import './Chat.css';
+
+// Prompturi predefinite pentru fiecare mod
+const MODE_PROMPTS = {
+  quiz: 'Generează 5 întrebări de tip quiz din cursurile mele încărcate, cu variante de răspuns (A/B/C/D) și răspunsul corect la final.',
+  flashcards: 'Creează 8 cartonașe de memorare (flashcards) din cursurile mele. Format: **Termen:** ... | **Definiție:** ...',
+  studyplan: 'Creează un ghid de studiu structurat pe baza cursurilor mele încărcate: capitole principale, concepte cheie și ordinea recomandată de parcurgere.',
+};
 
 function makeInitialMsg() {
   return {
@@ -33,61 +41,47 @@ export default function ChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [documentsCount, setDocumentsCount] = useState(0);
   const endRef = useRef(null);
+  const [searchParams] = useSearchParams();
+
+  // Pre-populeaza inputul daca vine din Home cu un mod specific
+  useEffect(() => {
+    const mode = searchParams.get('mode');
+    if (mode && MODE_PROMPTS[mode]) {
+      setInput(MODE_PROMPTS[mode]);
+    }
+  }, []);
 
   useEffect(() => {
-    loadConversations()
-  }, [])
+    loadConversations();
+  }, []);
 
   const loadConversations = async () => {
-
     try {
-
       const token = localStorage.getItem('token');
-
-      const res = await fetch(
-        'http://localhost:8000/api/chat/conversations',
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      );
-
+      const res = await fetch('http://localhost:8000/api/chat/conversations', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       const conversations = await res.json();
-
-      console.log("CONVERSATIONS:", conversations);
-
       const chatsObj = {};
-
       conversations.forEach(c => {
-
         chatsObj[c.id] = {
           id: c.id,
-          title: c.title || "Conversație",
+          title: c.title || 'Conversație',
           date: new Date(c.created_at).toLocaleDateString('ro'),
           pinned: false,
           createdAt: new Date(c.created_at).getTime(),
           messages: []
         };
-
       });
-
       setChats(chatsObj);
-
     } catch (err) {
       console.error(err);
     }
   };
 
   const activeChat = chats[activeId] || null;
-
-  const messages =
-    activeChat?.messages?.length
-      ? activeChat.messages
-      : [makeInitialMsg()];
-
-  const chatTitle =
-    activeChat?.title || 'Conversație nouă';
+  const messages = activeChat?.messages?.length ? activeChat.messages : [makeInitialMsg()];
+  const chatTitle = activeChat?.title || 'Conversație nouă';
 
   const history = Object.values(chats).sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
@@ -105,39 +99,20 @@ export default function ChatPage() {
   };
 
   const handleSend = async () => {
-
     if (!input.trim() || isTyping) return;
-
-    const token = localStorage.getItem('token')
-
-    const t = new Date().toLocaleTimeString('ro', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-
-    const userMsg = {
-      id: Date.now(),
-      role: 'user',
-      content: input,
-      time: t
-    };
-
+    const token = localStorage.getItem('token');
+    const t = new Date().toLocaleTimeString('ro', { hour: '2-digit', minute: '2-digit' });
+    const userMsg = { id: Date.now(), role: 'user', content: input, time: t };
     let chatId = activeId;
 
     try {
-
       if (!chatId) {
-
         const createRes = await fetch('http://localhost:8000/api/chat/conversation', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        })
-
-        const createData = await createRes.json()
-
-        chatId = createData.conversation_id
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const createData = await createRes.json();
+        chatId = createData.conversation_id;
 
         const newChat = {
           id: chatId,
@@ -146,39 +121,21 @@ export default function ChatPage() {
           pinned: false,
           createdAt: Date.now(),
           messages: [makeInitialMsg(), userMsg],
-        }
-
+        };
+        setChats(prev => ({ ...prev, [chatId]: newChat }));
+        setActiveId(chatId);
+        await new Promise(resolve => setTimeout(resolve, 0));
+      } else {
         setChats(prev => ({
           ...prev,
-          [chatId]: newChat
-        }))
-
-        setActiveId(chatId)
-
-        await new Promise(resolve => setTimeout(resolve, 0))
-
-      } else {
-
-        setChats(prev => {
-
-          const existingMessages =
-            prev[chatId]?.messages || []
-
-          return {
-            ...prev,
-            [chatId]: {
-              ...prev[chatId],
-              messages: [
-                ...existingMessages,
-                userMsg
-              ],
-            },
-          }
-        })
+          [chatId]: {
+            ...prev[chatId],
+            messages: [...(prev[chatId]?.messages || []), userMsg],
+          },
+        }));
       }
 
       const userInput = input;
-
       setInput('');
       setIsTyping(true);
 
@@ -188,123 +145,68 @@ export default function ChatPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          question: userInput,
-          conversation_id: chatId
-        })
-      })
-
-      const data = await res.json()
-
-      console.log("CHAT RESPONSE:", data)
-
-      setIsTyping(false)
+        body: JSON.stringify({ question: userInput, conversation_id: chatId })
+      });
+      const data = await res.json();
+      setIsTyping(false);
 
       const botMsg = {
         id: Date.now() + 1,
         role: 'assistant',
         content: data.answer || 'Nu am primit răspuns.',
         sources: data.sources || [],
-        time: new Date().toLocaleTimeString('ro', {
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-      }
+        time: new Date().toLocaleTimeString('ro', { hour: '2-digit', minute: '2-digit' }),
+      };
 
-      setChats(prev => {
-
-        const existingMessages =
-          prev[chatId]?.messages || []
-
-        return {
-          ...prev,
-          [chatId]: {
-            ...prev[chatId],
-            messages: [
-              ...existingMessages,
-              botMsg
-            ],
-          },
-        }
-      })
+      setChats(prev => ({
+        ...prev,
+        [chatId]: {
+          ...prev[chatId],
+          messages: [...(prev[chatId]?.messages || []), botMsg],
+        },
+      }));
 
     } catch (err) {
-
-      console.error(err)
-
-      setIsTyping(false)
-
+      console.error(err);
+      setIsTyping(false);
       const errorMsg = {
         id: Date.now() + 1,
         role: 'assistant',
         content: 'Eroare la conectarea cu serverul.',
-        time: new Date().toLocaleTimeString('ro', {
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-      }
-
-      setChats(prev => {
-
-        const existingMessages =
-          prev[chatId]?.messages || []
-
-        return {
-          ...prev,
-          [chatId]: {
-            ...prev[chatId],
-            messages: [
-              ...existingMessages,
-              errorMsg
-            ],
-          },
-        }
-      })
+        time: new Date().toLocaleTimeString('ro', { hour: '2-digit', minute: '2-digit' }),
+      };
+      setChats(prev => ({
+        ...prev,
+        [chatId]: {
+          ...prev[chatId],
+          messages: [...(prev[chatId]?.messages || []), errorMsg],
+        },
+      }));
     }
   };
 
   const handleSetActive = async (id) => {
-
     try {
-
       const token = localStorage.getItem('token');
-
-      const res = await fetch(
-        `http://localhost:8000/api/chat/conversations/${id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      );
-
-      const messages = await res.json();
-
-      console.log("MESSAGES:", messages);
-
+      const res = await fetch(`http://localhost:8000/api/chat/conversations/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const msgs = await res.json();
       setChats(prev => ({
         ...prev,
         [id]: {
           ...prev[id],
-          messages: messages.map(m => ({
+          messages: msgs.map(m => ({
             id: m.id,
             role: m.role,
             content: m.content,
-            time: new Date(m.created_at)
-              .toLocaleTimeString('ro', {
-                hour: '2-digit',
-                minute: '2-digit'
-              })
+            time: new Date(m.created_at).toLocaleTimeString('ro', { hour: '2-digit', minute: '2-digit' })
           }))
         }
       }));
-
       setActiveId(id);
-
     } catch (err) {
-
       console.error(err);
-
     }
   };
 
@@ -315,13 +217,29 @@ export default function ChatPage() {
     }));
   };
 
-  const handleDelete = (id) => {
+  // DELETE real catre backend
+  const handleDelete = async (id) => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`http://localhost:8000/api/chat/conversations/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch (err) {
+      console.error('Delete failed:', err);
+    }
     setChats(prev => {
       const next = { ...prev };
       delete next[id];
       return next;
     });
     if (activeId === id) setActiveId(null);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('email');
+    window.location.href = '/login';
   };
 
   return (
@@ -336,10 +254,11 @@ export default function ChatPage() {
         onNewChat={handleNewChat}
         onPin={handlePin}
         onDelete={handleDelete}
+        onDocumentsChange={setDocumentsCount}
+        onLogout={handleLogout}
       />
 
       <main className="chat-main">
-        {/* Topbar */}
         <header className="chat-topbar">
           <div className="topbar-left">
             <div className="topbar-chat-title">
@@ -347,7 +266,8 @@ export default function ChatPage() {
               <span>{chatTitle}</span>
             </div>
             <div className="topbar-docs-badge">
-              <FileText size={12} /> <span>{documentsCount} cursuri active</span>
+              <FileText size={12} />
+              <span>{documentsCount} {documentsCount === 1 ? 'curs activ' : 'cursuri active'}</span>
             </div>
           </div>
           <div className="topbar-right">
@@ -359,7 +279,6 @@ export default function ChatPage() {
           </div>
         </header>
 
-        {/* Messages */}
         <div className="chat-messages-area">
           <div className="messages-inner">
             {messages.map(m => <ChatMessage key={m.id} message={m} />)}
@@ -368,7 +287,6 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Input */}
         <ChatInput
           input={input}
           setInput={setInput}

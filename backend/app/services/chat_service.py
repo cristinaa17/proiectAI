@@ -359,6 +359,40 @@ def get_conversation_messages(
         cur.close()
         conn.close()
         
+def delete_conversation(conversation_id: int, user_id: int):
+    conn, cur = get_db()
+    try:
+        # verify ownership
+        cur.execute(
+            '''
+            SELECT id FROM "MindCore".conversations
+            WHERE id = %s AND user_id = %s
+            ''',
+            (conversation_id, user_id)
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        cur.execute(
+            'DELETE FROM "MindCore".messages WHERE conversation_id = %s',
+            (conversation_id,)
+        )
+        cur.execute(
+            'DELETE FROM "MindCore".conversations WHERE id = %s',
+            (conversation_id,)
+        )
+        conn.commit()
+        return {"status": "deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        cur.close()
+        conn.close()
+
+
 def update_conversation_title(
     conversation_id: int,
     title: str,

@@ -10,6 +10,7 @@ import {
   X,
   Clock,
   Pin,
+  LogOut,
   ChevronRight
 } from 'lucide-react';
 
@@ -144,7 +145,9 @@ export default function ChatSidebar({
   setActiveChat,
   onNewChat,
   onPin,
-  onDelete
+  onDelete,
+  onDocumentsChange,
+  onLogout
 }) {
 
   const navigate = useNavigate();
@@ -184,6 +187,8 @@ export default function ChatSidebar({
         }))
       );
 
+      if (onDocumentsChange) onDocumentsChange(data.length);
+
     } catch (err) {
 
       console.error(err);
@@ -196,11 +201,7 @@ export default function ChatSidebar({
   }, []);
 
   const email = localStorage.getItem("email") || "Utilizator";
-  const initials = email
-
-    ? email.substring(0, 2).toUpperCase()
-
-    : "MC";
+  const initials = email ? email.substring(0, 2).toUpperCase() : "MC";
 
 
   const filtered = history.filter(h =>
@@ -243,6 +244,8 @@ export default function ChatSidebar({
       }
 
       await loadDocuments();
+
+      if (onDocumentsChange) onDocumentsChange(docs.length + 1);
 
       alert('Curs încărcat cu succes!');
 
@@ -515,16 +518,33 @@ export default function ChatSidebar({
           <span>Dashboard</span>
         </button>
 
-        <div className="user-chip">
-
-          <div className="user-chip-avatar">
-            {initials}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="user-chip" style={{ flex: 1 }}>
+            <div className="user-chip-avatar">
+              {initials}
+            </div>
+            <span className="user-chip-email">
+              {email}
+            </span>
           </div>
 
-          <span className="user-chip-email">
-            {email}
-          </span>
-
+          <button
+            onClick={onLogout}
+            title="Deconectare"
+            style={{
+              background: 'rgba(255,100,100,0.08)',
+              border: '1px solid rgba(255,100,100,0.15)',
+              borderRadius: 8,
+              padding: '6px 8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              color: 'rgba(255,100,100,0.6)',
+              flexShrink: 0,
+            }}
+          >
+            <LogOut size={13} />
+          </button>
         </div>
 
       </div>

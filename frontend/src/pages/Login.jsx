@@ -9,48 +9,35 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
-  const validateEmail = (email) => {
-    return /\S+@\S+\.\S+/.test(email)
-  }
-
   const handleSubmit = async (e) => {
-  e.preventDefault()
+    e.preventDefault()
+    setError('')
 
-  if (!validateEmail(email)) {
-    return setError('Email invalid')
-  }
+    if (!/\S+@\S+\.\S+/.test(email)) return setError('Email invalid')
+    if (password.length < 4) return setError('Parola prea scurtă')
 
-  if (password.length < 4) {
-    return setError('Parola prea scurtă')
-  }
+    setLoading(true)
+    try {
+      const res = await fetch('http://localhost:8000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const data = await res.json()
+      if (!res.ok) return setError(data.detail || 'Login eșuat')
 
-  setError('')
-
-  try {
-    const res = await fetch('http://localhost:8000/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    })
-
-    const data = await res.json()
-
-    if (!res.ok) {
-      return setError(data.message || 'Login failed')
+      localStorage.setItem('token', data.access_token)
+      localStorage.setItem('email', email)
+      navigate('/chat')
+    } catch {
+      setError('Eroare de server. Încearcă din nou.')
+    } finally {
+      setLoading(false)
     }
-
-localStorage.setItem('token', data.access_token)
-localStorage.setItem('user', JSON.stringify({ email }))
-
-    navigate('/')
-  } catch (err) {
-    setError('Server error')
   }
-}
 
   return (
     <div className="login-container">
@@ -59,10 +46,10 @@ localStorage.setItem('user', JSON.stringify({ email }))
         onSubmit={handleSubmit}
         initial={{ opacity: 0, scale: 0.9, y: 40 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
       >
-        
         <h2 className="brand-title">MindCore</h2>
-<p className="subtitle">Login to your account</p>
+        <p className="subtitle">Intră în contul tău</p>
 
         <div className="input-group">
           <input
@@ -81,8 +68,7 @@ localStorage.setItem('user', JSON.stringify({ email }))
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <label>Password</label>
-
+          <label>Parolă</label>
           <span onClick={() => setShow(!show)}>
             {show ? <EyeOff size={18} /> : <Eye size={18} />}
           </span>
@@ -90,7 +76,9 @@ localStorage.setItem('user', JSON.stringify({ email }))
 
         {error && <div className="error">{error}</div>}
 
-        <button type="submit">Login</button>
+        <button type="submit" disabled={loading}>
+          {loading ? 'Se procesează...' : 'Login'}
+        </button>
       </motion.form>
     </div>
   )

@@ -8,6 +8,7 @@ from app.services.chat_service import (
     create_conversation_for_user,
     get_user_conversations,
     get_conversation_messages,
+    delete_conversation,
 )
 
 router = APIRouter(prefix="/api/chat", tags=["Chat"])
@@ -37,6 +38,17 @@ async def legacy_chat(request: ChatRequest, current_user: int = Depends(get_curr
 @legacy_router.post("/create-conversation")
 def legacy_create_conversation(user_id: int = Depends(get_current_user)):
     return create_conversation(user_id=user_id)
+
+@router.delete("/conversations/{conversation_id}")
+def remove_conversation(
+    conversation_id: int,
+    current_user: int = Depends(get_current_user)
+):
+    return delete_conversation(
+        conversation_id=conversation_id,
+        user_id=current_user
+    )
+
 
 @router.get("/conversations")
 def conversations(
