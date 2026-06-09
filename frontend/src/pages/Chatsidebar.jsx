@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -15,9 +15,6 @@ import {
 
 import { useNavigate } from 'react-router-dom';
 
-// ─────────────────────────────────────────────────────────────
-// History Item
-// ─────────────────────────────────────────────────────────────
 function HistoryItem({ h, active, onClick, onPin, onDelete }) {
 
   const [hovered, setHovered] = useState(false);
@@ -141,9 +138,6 @@ const actionBtn = {
   alignItems: 'center',
 };
 
-// ─────────────────────────────────────────────────────────────
-// Sidebar
-// ─────────────────────────────────────────────────────────────
 export default function ChatSidebar({
   history,
   activeChat,
@@ -155,10 +149,59 @@ export default function ChatSidebar({
 
   const navigate = useNavigate();
 
+
   const [search, setSearch] = useState('');
   const [docsOpen, setDocsOpen] = useState(false);
-
   const [docs, setDocs] = useState([]);
+
+  const loadDocuments = async () => {
+
+    try {
+
+      const token = localStorage.getItem('token');
+
+      const res = await fetch(
+        'http://localhost:8000/api/documents',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      const data = await res.json();
+
+      console.log('DOCUMENTS:', data);
+
+      if (!res.ok) return;
+
+      setDocs(
+        data.map(doc => ({
+          id: doc.id,
+          name: doc.file_name,
+          size: '',
+          icon: '📄'
+        }))
+      );
+
+    } catch (err) {
+
+      console.error(err);
+
+    }
+  };
+
+  useEffect(() => {
+    loadDocuments();
+  }, []);
+
+  const email = localStorage.getItem("email") || "Utilizator";
+  const initials = email
+
+    ? email.substring(0, 2).toUpperCase()
+
+    : "MC";
+
 
   const filtered = history.filter(h =>
     h.title.toLowerCase().includes(search.toLowerCase())
@@ -167,61 +210,50 @@ export default function ChatSidebar({
   const pinned = filtered.filter(h => h.pinned);
   const recent = filtered.filter(h => !h.pinned);
 
-  // ───────────────────────────────────────────────────────────
-  // Upload
-  // ───────────────────────────────────────────────────────────
-const handleUpload = async (e) => {
+  const handleUpload = async (e) => {
 
-  const file = e.target.files[0];
+    const file = e.target.files[0];
 
-  if (!file) return;
+    if (!file) return;
 
-  try {
+    try {
 
-    const token = localStorage.getItem('token');
+      const token = localStorage.getItem('token');
 
-    const formData = new FormData();
+      const formData = new FormData();
 
-    formData.append('file', file);
-    formData.append('subject', 'General');
+      formData.append('file', file);
+      formData.append('subject', 'General');
 
-    const res = await fetch('http://localhost:8000/upload-document', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`
-      },
-      body: formData
-    });
+      const res = await fetch('http://localhost:8000/api/documents/upload', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    console.log('UPLOAD:', data);
+      console.log('UPLOAD:', data);
 
-    if (!res.ok) {
-      alert(data.detail || 'Upload failed');
-      return;
-    }
-
-    setDocs(prev => [
-      ...prev,
-      {
-        id: Date.now(),
-        name: file.name,
-        size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
-        icon: '📄'
+      if (!res.ok) {
+        alert(data.detail || 'Upload failed');
+        return;
       }
-    ]);
 
-    alert('Curs încărcat cu succes!');
+      await loadDocuments();
 
-  } catch (err) {
+      alert('Curs încărcat cu succes!');
 
-    console.error(err);
+    } catch (err) {
 
-    alert('Eroare upload');
+      console.error(err);
 
-  }
-};
+      alert('Eroare upload');
+
+    }
+  };
 
   return (
 
@@ -486,11 +518,11 @@ const handleUpload = async (e) => {
         <div className="user-chip">
 
           <div className="user-chip-avatar">
-            VS
+            {initials}
           </div>
 
           <span className="user-chip-email">
-            vladeugen.stoia@ulbsibiu.ro
+            {email}
           </span>
 
         </div>

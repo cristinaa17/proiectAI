@@ -1,19 +1,17 @@
 import { motion } from 'framer-motion';
 import { Sparkles, User, Download, Star } from 'lucide-react';
 
-// ─── Markdown-lite renderer ───────────────────────────────────
 function renderContent(text) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) =>
     part.startsWith('**') && part.endsWith('**')
       ? <strong key={i} style={{ fontWeight: 600, color: '#e2e8f0' }}>{part.slice(2, -2)}</strong>
       : part.split('\n').map((line, j) => (
-          <span key={`${i}-${j}`}>{line}{j < part.split('\n').length - 1 && <br />}</span>
-        ))
+        <span key={`${i}-${j}`}>{line}{j < part.split('\n').length - 1 && <br />}</span>
+      ))
   );
 }
 
-// ─── TypingIndicator ─────────────────────────────────────────
 export function TypingIndicator() {
   return (
     <motion.div
@@ -37,7 +35,6 @@ export function TypingIndicator() {
   );
 }
 
-// ─── ChatMessage ─────────────────────────────────────────────
 export default function ChatMessage({ message }) {
   const isBot = message.role === 'assistant';
 
@@ -56,6 +53,22 @@ export default function ChatMessage({ message }) {
 
       <div style={isBot ? s.botBubble : s.userBubble}>
         <div style={s.text}>{renderContent(message.content)}</div>
+        {isBot &&
+          message.sources &&
+          message.sources.length > 0 && (
+            <div style={s.sources}>
+              <div style={s.sourcesTitle}>Surse:</div>
+
+              {message.sources.map((source, index) => (
+                <div
+                  key={index}
+                  style={s.sourceItem}
+                >
+                  📄 {source.filename} (pagina {source.page})
+                </div>
+              ))}
+            </div>
+          )}
         <p style={s.time}>{message.time}</p>
         {isBot && (
           <div style={s.actions}>
@@ -74,7 +87,6 @@ export default function ChatMessage({ message }) {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────
 const s = {
   wrapper: {
     display: 'flex', alignItems: 'flex-start', gap: 12,
@@ -124,5 +136,24 @@ const s = {
   dot: {
     display: 'inline-block', width: 7, height: 7,
     borderRadius: '50%', background: 'rgba(255,255,255,0.35)',
+  },
+
+  sources: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTop: '1px solid rgba(255,255,255,0.08)',
+  },
+
+  sourcesTitle: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#94a3b8',
+    marginBottom: 6,
+  },
+
+  sourceItem: {
+    fontSize: 12,
+    color: '#cbd5e1',
+    marginBottom: 4,
   },
 };

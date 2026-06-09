@@ -13,7 +13,6 @@ export default function ChatInput({ input, setInput, handleSend, isTyping }) {
     }
   };
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';

@@ -68,7 +68,6 @@ function AuroraBackground() {
         ctx.lineTo(-10, h + 10)
         ctx.closePath()
  
-        // Gradient vertical - opacitate mai mare pentru val mai vizibil
         const g = ctx.createLinearGradient(0, baseY - l.amp * 1.5, 0, h)
         g.addColorStop(0, l.col + '0.22)')
         g.addColorStop(0.4, l.col + '0.10)')
@@ -94,7 +93,7 @@ function AuroraBackground() {
         position: 'fixed',
         top: 0,
         left: 0,
-        width: '100vw',      // 100vw in loc de inset:0 - garanteaza latimea completa
+        width: '100vw',     
         height: '100vh',
         zIndex: 0,
         pointerEvents: 'none',

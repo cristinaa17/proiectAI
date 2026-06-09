@@ -2,14 +2,12 @@
   position: fixed;
   top: 0;
   left: 0;
-  /* Latime 100% cu box-sizing border-box - padding-ul nu mai impinge butonul afara */
   width: 100%;
   box-sizing: border-box;
   z-index: 100;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  /* Padding redus pe dreapta ca sa nu taie butonul */
   padding: 18px 32px 18px 40px;
   background: rgba(6, 6, 15, 0.6);
   backdrop-filter: blur(12px);
@@ -25,20 +23,19 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  flex-shrink: 0; /* nu se comprima niciodata */
+  flex-shrink: 0; 
 }
 
 .header-right {
   display: flex;
   align-items: center;
   gap: 16px;
-  flex-shrink: 0; /* nu se comprima - butonul ramane vizibil */
+  flex-shrink: 0; 
 }
 
 .user {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.5);
-  /* Trunchiere daca emailul e prea lung */
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -46,7 +43,6 @@
 }
 
 .login-btn.small {
-  /* Dimensiuni fixe - butonul nu isi schimba marimea */
   padding: 8px 22px;
   border-radius: 20px;
   border: 1px solid rgba(99, 102, 241, 0.5);
@@ -57,7 +53,6 @@
   cursor: pointer;
   transition: all 0.2s;
   -webkit-text-fill-color: #a5b4fc;
-  /* Previne comportamentul de overflow */
   white-space: nowrap;
   flex-shrink: 0;
 }

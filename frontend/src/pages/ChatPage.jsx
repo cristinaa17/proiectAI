@@ -5,7 +5,6 @@ import ChatMessage, { TypingIndicator } from './ChatMessage';
 import ChatInput from './ChatInput';
 import './Chat.css';
 
-// ─── Helpers ─────────────────────────────────────────────────
 function makeInitialMsg() {
   return {
     id: 1,
@@ -15,10 +14,6 @@ function makeInitialMsg() {
   };
 }
 
-/**
- * Generează automat titlul conversației din primul mesaj al userului.
- * Taie la ~40 de caractere la limita unui cuvânt.
- */
 function generateTitle(text) {
   const clean = text.trim().replace(/\s+/g, ' ');
   if (clean.length <= 40) return clean;
@@ -31,16 +26,59 @@ function todayLabel() {
   return new Date().toLocaleDateString('ro', { day: 'numeric', month: 'short' });
 }
 
-// ─── ChatPage ─────────────────────────────────────────────────
 export default function ChatPage() {
-  // chats[id] = { id, title, date, pinned, createdAt, messages[] }
   const [chats, setChats] = useState({});
   const [activeId, setActiveId] = useState(null);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [documentsCount, setDocumentsCount] = useState(0);
   const endRef = useRef(null);
 
-  // Conversația activă
+  useEffect(() => {
+    loadConversations()
+  }, [])
+
+  const loadConversations = async () => {
+
+    try {
+
+      const token = localStorage.getItem('token');
+
+      const res = await fetch(
+        'http://localhost:8000/api/chat/conversations',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      const conversations = await res.json();
+
+      console.log("CONVERSATIONS:", conversations);
+
+      const chatsObj = {};
+
+      conversations.forEach(c => {
+
+        chatsObj[c.id] = {
+          id: c.id,
+          title: c.title || "Conversație",
+          date: new Date(c.created_at).toLocaleDateString('ro'),
+          pinned: false,
+          createdAt: new Date(c.created_at).getTime(),
+          messages: []
+        };
+
+      });
+
+      setChats(chatsObj);
+
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const activeChat = chats[activeId] || null;
 
   const messages =
@@ -51,63 +89,21 @@ export default function ChatPage() {
   const chatTitle =
     activeChat?.title || 'Conversație nouă';
 
-  // Istoric pentru sidebar (pinned primii, apoi desc după createdAt)
   const history = Object.values(chats).sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     return b.createdAt - a.createdAt;
   });
 
-  // ── Scroll la final ──────────────────────────────────────────
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  // ── Load conversations din backend ──────────────────────────
-useEffect(() => {
-  loadConversations()
-}, [])
-
-  // ── New Chat ─────────────────────────────────────────────────
   const handleNewChat = () => {
     setActiveId(null);
     setInput('');
     setIsTyping(false);
   };
 
-  const loadConversations = async () => {
-
-  try {
-
-    const token = localStorage.getItem('token')
-
-    const res = await fetch('http://localhost:8000/conversations', {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-
-    const data = await res.json()
-
-    const formattedChats = {}
-
-    data.forEach(chat => {
-      formattedChats[chat.id] = {
-        id: chat.id,
-        title: chat.title,
-        createdAt: new Date(chat.created_at).getTime(),
-        pinned: false,
-        messages: []
-      }
-    })
-
-    setChats(formattedChats)
-
-  } catch (err) {
-    console.error(err)
-  }
-}
-
-  // ── Send message ─────────────────────────────────────────────
   const handleSend = async () => {
 
     if (!input.trim() || isTyping) return;
@@ -130,12 +126,9 @@ useEffect(() => {
 
     try {
 
-      // ─────────────────────────────────────
-      // Creează conversație nouă
-      // ─────────────────────────────────────
       if (!chatId) {
 
-        const createRes = await fetch('http://localhost:8000/create-conversation', {
+        const createRes = await fetch('http://localhost:8000/api/chat/conversation', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`
@@ -166,9 +159,6 @@ useEffect(() => {
 
       } else {
 
-        // ─────────────────────────────────────
-        // Adaugă mesaj user
-        // ─────────────────────────────────────
         setChats(prev => {
 
           const existingMessages =
@@ -192,10 +182,7 @@ useEffect(() => {
       setInput('');
       setIsTyping(true);
 
-      // ─────────────────────────────────────
-      // Request backend
-      // ─────────────────────────────────────
-      const res = await fetch('http://localhost:8000/chat', {
+      const res = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -209,21 +196,21 @@ useEffect(() => {
 
       const data = await res.json()
 
+      console.log("CHAT RESPONSE:", data)
+
       setIsTyping(false)
 
       const botMsg = {
         id: Date.now() + 1,
         role: 'assistant',
         content: data.answer || 'Nu am primit răspuns.',
+        sources: data.sources || [],
         time: new Date().toLocaleTimeString('ro', {
           hour: '2-digit',
           minute: '2-digit'
         }),
       }
 
-      // ─────────────────────────────────────
-      // Adaugă răspuns AI
-      // ─────────────────────────────────────
       setChats(prev => {
 
         const existingMessages =
@@ -276,53 +263,51 @@ useEffect(() => {
     }
   };
 
-  // ── Switch chat ──────────────────────────────────────────────
-const handleSetActive = async (id) => {
+  const handleSetActive = async (id) => {
 
-  setActiveId(id)
+    try {
 
-  try {
+      const token = localStorage.getItem('token');
 
-    const token = localStorage.getItem('token')
-
-    const res = await fetch(
-      `http://localhost:8000/conversations/${id}/messages`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`
+      const res = await fetch(
+        `http://localhost:8000/api/chat/conversations/${id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
         }
-      }
-    )
+      );
 
-    const data = await res.json()
+      const messages = await res.json();
 
-    const formattedMessages = data.map(msg => ({
-      id: msg.id,
-      role: msg.role,
-      content: msg.content,
-      time: new Date(msg.created_at).toLocaleTimeString('ro', {
-        hour: '2-digit',
-        minute: '2-digit'
-      })
-    }))
+      console.log("MESSAGES:", messages);
 
-    setChats(prev => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        messages: formattedMessages
-      }
-    }))
+      setChats(prev => ({
+        ...prev,
+        [id]: {
+          ...prev[id],
+          messages: messages.map(m => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            time: new Date(m.created_at)
+              .toLocaleTimeString('ro', {
+                hour: '2-digit',
+                minute: '2-digit'
+              })
+          }))
+        }
+      }));
 
-    setInput('')
-    setIsTyping(false)
+      setActiveId(id);
 
-  } catch (err) {
-    console.error(err)
-  }
-};
+    } catch (err) {
 
-  // ── Pin / Delete ─────────────────────────────────────────────
+      console.error(err);
+
+    }
+  };
+
   const handlePin = (id) => {
     setChats(prev => ({
       ...prev,
@@ -339,7 +324,6 @@ const handleSetActive = async (id) => {
     if (activeId === id) setActiveId(null);
   };
 
-  // ─── Render ──────────────────────────────────────────────────
   return (
     <div className="chat-universe">
       <div className="aurora-bg" />
@@ -363,14 +347,14 @@ const handleSetActive = async (id) => {
               <span>{chatTitle}</span>
             </div>
             <div className="topbar-docs-badge">
-              <FileText size={12} /> <span>3 cursuri active</span>
+              <FileText size={12} /> <span>{documentsCount} cursuri active</span>
             </div>
           </div>
           <div className="topbar-right">
             <button className="topbar-icon-btn"><Star size={15} /></button>
             <button className="topbar-icon-btn"><MoreHorizontal size={15} /></button>
             <div className="model-badge">
-              <Sparkles size={11} /> GPT-4o
+              <Sparkles size={11} /> MindCore AI
             </div>
           </div>
         </header>

@@ -11,3 +11,4 @@ python-jose
 passlib[bcrypt]
 bcrypt==3.2.0
 langchain-text-splitters
+email-validator

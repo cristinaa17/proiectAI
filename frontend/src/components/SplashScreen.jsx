@@ -42,7 +42,6 @@ export default function SplashScreen({ onFinished }) {
       ctx.fillStyle = 'rgba(7,7,14,0.25)'
       ctx.fillRect(0, 0, w, h)
 
-      // Desenează liniile de conexiune între stele apropiate
       for (let i = 0; i < N; i++) {
         for (let j = i + 1; j < N; j++) {
           const dx = stars[j].x - stars[i].x
@@ -61,13 +60,11 @@ export default function SplashScreen({ onFinished }) {
         }
       }
 
-      // Desenează stelele
       stars.forEach(s => {
         s.x += (s.tx - s.x) * s.speed
         s.y += (s.ty - s.y) * s.speed
         const twinkle = 0.5 + 0.5 * Math.sin(t * 0.05 + s.phase)
 
-        // Glow în jurul stelei
         const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 5)
         glow.addColorStop(0, s.color + 'aa')
         glow.addColorStop(1, s.color + '00')
@@ -78,7 +75,6 @@ export default function SplashScreen({ onFinished }) {
         ctx.fill()
         ctx.globalAlpha = 1
 
-        // Steaua în sine
         ctx.beginPath()
         ctx.arc(s.x, s.y, s.r * (0.8 + twinkle * 0.4), 0, Math.PI * 2)
         ctx.fillStyle = s.color
@@ -87,10 +83,8 @@ export default function SplashScreen({ onFinished }) {
         ctx.globalAlpha = 1
       })
 
-      // Text MindCore
       const ta = Math.max(0, (prog - 0.55) / 0.45)
       if (ta > 0) {
-        // Fundal subtil în spatele textului
         const bgGrad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, 200)
         bgGrad.addColorStop(0, 'rgba(7,7,14,0.75)')
         bgGrad.addColorStop(1, 'rgba(7,7,14,0)')
@@ -99,7 +93,6 @@ export default function SplashScreen({ onFinished }) {
         ctx.fillStyle = bgGrad
         ctx.fill()
 
-        // Titlu
         ctx.save()
         ctx.globalAlpha = ta
         ctx.font = `bold ${Math.min(w * 0.14, 110)}px Caveat, cursive`
@@ -113,7 +106,6 @@ export default function SplashScreen({ onFinished }) {
         ctx.fillText('MindCore', w/2, h/2)
         ctx.restore()
 
-        // Badge
         ctx.save()
         ctx.globalAlpha = ta * 0.65
         ctx.font = '13px Inter, sans-serif'
