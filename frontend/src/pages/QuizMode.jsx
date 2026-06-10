@@ -121,8 +121,12 @@ Folosește STRICT acest format pentru toate cele 5 întrebări.`,
       setRawText(text);
       const parsed = parseQuestions(text);
       if (parsed.length === 0) {
-        setError('Nu am putut genera întrebări. Asigură-te că ai cursuri încărcate.');
-        setPhase('error');
+        if (text.trim()) {
+          setPhase('raw');
+        } else {
+          setError('Nu am putut genera întrebări. Asigură-te că ai cursuri încărcate.');
+          setPhase('error');
+        }
       } else {
         setQuestions(parsed);
         setPhase('questions');
@@ -178,6 +182,22 @@ Folosește STRICT acest format pentru toate cele 5 întrebări.`,
             <XCircle size={32} style={{ color: 'rgba(255,100,100,0.6)' }} />
             <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: 12 }}>{error}</p>
             <button style={s.regenBtn} onClick={generateQuiz}>Încearcă din nou</button>
+          </div>
+        )}
+
+        {phase === 'raw' && (
+          <div style={s.questionsList}>
+            <div style={s.questionCard}>
+              <p style={{ ...s.questionNum, marginBottom: 12 }}>
+                Nu am putut formata întrebările ca quiz interactiv — iată răspunsul AI:
+              </p>
+              <div style={{ fontSize: 14, lineHeight: 1.7, color: 'rgba(255,255,255,0.85)', whiteSpace: 'pre-wrap' }}>
+                {rawText}
+              </div>
+            </div>
+            <button style={s.regenBtn} onClick={generateQuiz}>
+              <RefreshCw size={13} /> Încearcă din nou
+            </button>
           </div>
         )}
 

@@ -5,6 +5,7 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import ChatPage from './pages/ChatPage'
 import SplashScreen from './components/SplashScreen'
+import ProtectedRoute from './components/ProtectedRoute'
 
 function App() {
   const [showSplash, setShowSplash] = useState(true)
@@ -22,7 +23,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
           </Routes>
         </BrowserRouter>
       )}

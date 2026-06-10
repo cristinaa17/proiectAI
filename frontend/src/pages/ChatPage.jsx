@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FileText, MessageSquare, MoreHorizontal, Sparkles, Star } from 'lucide-react';
+import { FileText, MessageSquare, Sparkles } from 'lucide-react';
 import ChatSidebar from './Chatsidebar';
 import ChatMessage, { TypingIndicator } from './ChatMessage';
 import ChatInput from './ChatInput';
@@ -41,6 +41,7 @@ export default function ChatPage() {
   const [documentsCount, setDocumentsCount] = useState(0);
   const [viewMode, setViewMode] = useState('chat');
   const [quizConversationId, setQuizConversationId] = useState(null);
+  const [initError, setInitError] = useState('');
   const endRef = useRef(null);
   const [searchParams] = useSearchParams();
 
@@ -56,17 +57,31 @@ export default function ChatPage() {
   useEffect(() => { loadConversations(); }, []);
 
   const initSpecialMode = async (mode) => {
+    setInitError('');
+    setViewMode(mode); 
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('http://localhost:8000/api/chat/conversation', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
+
+      if (res.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('email');
+        window.location.href = '/login';
+        return;
+      }
+      if (!res.ok) throw new Error('Server error: ' + res.status);
+
       const data = await res.json();
+      if (!data.conversation_id) throw new Error('Răspuns invalid de la server');
+
       setQuizConversationId(data.conversation_id);
-      setViewMode(mode);
     } catch (err) {
       console.error(err);
+      setInitError('Nu am putut porni acest mod. Verifică dacă backend-ul rulează și încearcă din nou.');
+      setViewMode('chat');
     }
   };
 
@@ -224,7 +239,8 @@ export default function ChatPage() {
   };
 
   const renderMain = () => {
-    if (viewMode === 'quiz' && quizConversationId) {
+    if (viewMode === 'quiz') {
+      if (!quizConversationId) return <ModeLoading label="Se pregătește quiz-ul…" color="#818cf8" />;
       return (
         <QuizMode
           conversationId={quizConversationId}
@@ -232,7 +248,8 @@ export default function ChatPage() {
         />
       );
     }
-    if (viewMode === 'flashcards' && quizConversationId) {
+    if (viewMode === 'flashcards') {
+      if (!quizConversationId) return <ModeLoading label="Se pregătesc flashcard-urile…" color="#22c55e" />;
       return (
         <FlashcardsMode
           conversationId={quizConversationId}
@@ -255,11 +272,19 @@ export default function ChatPage() {
             </div>
           </div>
           <div className="topbar-right">
-            <button className="topbar-icon-btn"><Star size={15} /></button>
-            <button className="topbar-icon-btn"><MoreHorizontal size={15} /></button>
             <div className="model-badge"><Sparkles size={11} /> MindCore AI</div>
           </div>
         </header>
+
+        {initError && (
+          <div style={{
+            margin: '12px 32px 0', padding: '10px 16px',
+            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+            borderRadius: 10, color: '#f87171', fontSize: 13,
+          }}>
+            {initError}
+          </div>
+        )}
 
         <div className="chat-messages-area">
           <div className="messages-inner">
@@ -299,6 +324,24 @@ export default function ChatPage() {
       <main className="chat-main">
         {renderMain()}
       </main>
+    </div>
+  );
+}
+
+function ModeLoading({ label, color }) {
+  return (
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 16,
+    }}>
+      <div style={{
+        width: 32, height: 32, borderRadius: '50%',
+        border: `3px solid rgba(255,255,255,0.1)`,
+        borderTopColor: color,
+        animation: 'spin 0.8s linear infinite',
+      }} />
+      <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>{label}</p>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

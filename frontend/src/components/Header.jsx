@@ -7,7 +7,7 @@ export default function Header() {
   const navigate = useNavigate()
 const [token, setToken] = useState(null)
 
-const storedUser = localStorage.getItem('user')
+const storedUser = localStorage.getItem('email')
 const user = storedUser || null
 
 useEffect(() => {
@@ -20,7 +20,7 @@ useEffect(() => {
 
 const handleLogout = () => {
   localStorage.removeItem('token')
-  localStorage.removeItem('user')
+  localStorage.removeItem('email')
   setToken(null)
   navigate('/')
 }

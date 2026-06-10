@@ -5,6 +5,7 @@ from app.config import GROQ_MODEL
 from app.database import get_db
 from app.services.qdrant_service import search_documents
 from app.database import get_dict_db
+import re
 import traceback
 
 def create_conversation_for_user(user_id: int) -> dict:
@@ -98,29 +99,27 @@ def build_prompt(
     context: str,
     question: str,
 ) -> str:
+    has_context = bool(context.strip())
+    context_block = context.strip() if has_context else "(niciun context relevant găsit în cursurile încărcate)"
+
     return f"""
-Ești MindCore, un asistent AI academic pentru studenți.
+Ești MindCore, un asistent AI academic prietenos pentru studenți.
 
-Folosește STRICT informațiile din CONTEXT.
+Reguli:
+- Dacă întrebarea este o conversație casuală (salut, mulțumesc, ce faci, cum te cheamă, comentarii/jigniri/glume etc.) sau o cerere de clarificare/explicație a unui răspuns anterior din ISTORIC, răspunde natural, prietenos, profesionist și constructiv (chiar dacă tonul utilizatorului e ostil), folosind ISTORIC-ul conversației ca să înțelegi la ce se referă studentul. NU folosi CONTEXT-ul pentru acest tip de răspuns.
+- Dacă întrebarea cere informații concrete despre un curs/materie, folosește în primul rând CONTEXT-ul de mai jos.
+- Dacă întrebarea ține de un curs dar CONTEXT-ul nu conține informația cerută, spune clar că nu ai găsit informația în cursurile încărcate și sugerează reformularea întrebării sau încărcarea materialului relevant. NU folosi CONTEXT-ul în acest caz.
+- Răspunde clar, structurat, pe înțelesul studentului. Poți folosi markdown (titluri, liste, **bold**, blocuri de cod) când ajută la claritate.
 
-Nu folosi cunoștințe externe.
-
-Dacă răspunsul nu poate fi găsit în CONTEXT,
-spune exact:
-
-Nu am găsit informația în cursurile încărcate.
-
-Răspunde:
-- clar
-- structurat
-- academic
-- pe înțelesul studentului
+FOARTE IMPORTANT: La finalul răspunsului tău, pe ultima linie, separat, scrie EXACT unul din aceste marcaje (fără ghilimele, fără alt text pe acea linie):
+[[CONTEXT_USED:DA]]  -- daca ai folosit informatii din CONTEXT pentru a raspunde
+[[CONTEXT_USED:NU]]  -- daca raspunsul e conversational/explicativ si NU se bazeaza pe CONTEXT
 
 ISTORIC:
 {history_text}
 
 CONTEXT:
-{context}
+{context_block}
 
 ÎNTREBARE:
 {question}
@@ -222,33 +221,22 @@ def answer_question(
             limit=5,
         )
 
+        SCORE_THRESHOLD = 0.35
+        relevant_results = [
+            r for r in results
+            if getattr(r, "score", 0) >= SCORE_THRESHOLD
+        ]
+
         for result in results:
             try:
                 print("SCORE =", result.score)
             except Exception:
                 pass
-    
-        if not results:
-            answer = "Nu am găsit informația în cursurile încărcate."
-
-            save_message(
-                cur,
-                conversation_id,
-                "assistant",
-                answer,
-            )
-
-            conn.commit()
-
-            return {
-                "answer": answer,
-                "sources": [],
-            }
 
         context = "\n\n".join(
             [
                 (result.payload or {}).get("text", "")
-                for result in results
+                for result in relevant_results
                 if result.payload
             ]
         )
@@ -261,6 +249,13 @@ def answer_question(
 
         answer = generate_answer(prompt)
 
+        marker_match = re.search(r"\[\[CONTEXT_USED:(DA|NU)\]\]\s*$", answer.strip(), re.IGNORECASE)
+        if marker_match:
+            context_used = marker_match.group(1).upper() == "DA"
+            answer = answer[:marker_match.start()].rstrip()
+
+        sources = build_sources(relevant_results) if context_used else []
+
         save_message(
             cur,
             conversation_id,
@@ -272,7 +267,7 @@ def answer_question(
 
         return {
             "answer": answer,
-            "sources": build_sources(results),
+            "sources": sources,
         }
 
     except Exception as exc:

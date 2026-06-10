@@ -1,15 +1,110 @@
 import { motion } from 'framer-motion';
-import { Sparkles, User, Download, Star } from 'lucide-react';
+import { Sparkles, User } from 'lucide-react';
+
+function renderInline(text, keyPrefix) {
+  const tokens = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g);
+  return tokens.map((tok, i) => {
+    const key = `${keyPrefix}-${i}`;
+    if (tok.startsWith('**') && tok.endsWith('**')) {
+      return <strong key={key} style={{ fontWeight: 700, color: '#e2e8f0' }}>{tok.slice(2, -2)}</strong>;
+    }
+    if (tok.startsWith('`') && tok.endsWith('`')) {
+      return <code key={key} style={s.inlineCode}>{tok.slice(1, -1)}</code>;
+    }
+    if (tok.startsWith('*') && tok.endsWith('*') && tok.length > 2) {
+      return <em key={key}>{tok.slice(1, -1)}</em>;
+    }
+    return <span key={key}>{tok}</span>;
+  });
+}
 
 function renderContent(text) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) =>
-    part.startsWith('**') && part.endsWith('**')
-      ? <strong key={i} style={{ fontWeight: 600, color: '#e2e8f0' }}>{part.slice(2, -2)}</strong>
-      : part.split('\n').map((line, j) => (
-        <span key={`${i}-${j}`}>{line}{j < part.split('\n').length - 1 && <br />}</span>
-      ))
-  );
+  const lines = text.split('\n');
+  const blocks = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.trim().startsWith('```')) {
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; 
+      blocks.push(
+        <pre key={blocks.length} style={s.codeBlock}>
+          <code>{codeLines.join('\n')}</code>
+        </pre>
+      );
+      continue;
+    }
+
+    const headerMatch = line.match(/^(#{1,3})\s+(.*)/);
+    if (headerMatch) {
+      const level = headerMatch[1].length;
+      const HeaderTag = level === 1 ? 'h3' : level === 2 ? 'h4' : 'h5';
+      blocks.push(
+        <HeaderTag key={blocks.length} style={s.heading}>
+          {renderInline(headerMatch[2], `h${blocks.length}`)}
+        </HeaderTag>
+      );
+      i++;
+      continue;
+    }
+
+    const listItemMatch = line.match(/^\s*([-*]|\d+[\.\)])\s+(.*)/);
+    if (listItemMatch) {
+      const ordered = /\d/.test(listItemMatch[1]);
+      const items = [];
+      while (i < lines.length) {
+        const m = lines[i].match(/^\s*([-*]|\d+[\.\)])\s+(.*)/);
+        if (!m) break;
+        items.push(m[2]);
+        i++;
+      }
+      const ListTag = ordered ? 'ol' : 'ul';
+      blocks.push(
+        <ListTag key={blocks.length} style={s.list}>
+          {items.map((item, j) => (
+            <li key={j} style={s.listItem}>{renderInline(item, `li${blocks.length}-${j}`)}</li>
+          ))}
+        </ListTag>
+      );
+      continue;
+    }
+
+    if (line.trim() === '') {
+      i++;
+      continue;
+    }
+
+    const paraLines = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() !== '' &&
+      !lines[i].trim().startsWith('```') &&
+      !lines[i].match(/^(#{1,3})\s+/) &&
+      !lines[i].match(/^\s*([-*]|\d+[\.\)])\s+/)
+    ) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    blocks.push(
+      <p key={blocks.length} style={s.paragraph}>
+        {paraLines.map((l, j) => (
+          <span key={j}>
+            {renderInline(l, `p${blocks.length}-${j}`)}
+            {j < paraLines.length - 1 && <br />}
+          </span>
+        ))}
+      </p>
+    );
+  }
+
+  return blocks;
 }
 
 export function TypingIndicator() {
@@ -70,12 +165,6 @@ export default function ChatMessage({ message }) {
             </div>
           )}
         <p style={s.time}>{message.time}</p>
-        {isBot && (
-          <div style={s.actions}>
-            <button style={s.actionBtn} title="Copiază"><Download size={11} /></button>
-            <button style={s.actionBtn} title="Salvează"><Star size={11} /></button>
-          </div>
-        )}
       </div>
 
       {!isBot && (
@@ -121,17 +210,32 @@ const s = {
   text: {
     fontSize: 14, lineHeight: 1.7, color: 'rgba(255,255,255,0.88)',
   },
+  paragraph: {
+    margin: '0 0 10px', fontSize: 14, lineHeight: 1.7, color: 'rgba(255,255,255,0.88)',
+  },
+  heading: {
+    margin: '14px 0 8px', fontWeight: 700, color: '#fff', lineHeight: 1.4,
+  },
+  list: {
+    margin: '0 0 10px', paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 4,
+  },
+  listItem: {
+    fontSize: 14, lineHeight: 1.6, color: 'rgba(255,255,255,0.88)',
+  },
+  inlineCode: {
+    background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 4, padding: '1px 5px', fontSize: 12.5,
+    fontFamily: 'monospace', color: '#a5b4fc',
+  },
+  codeBlock: {
+    background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: 10, padding: '12px 14px', overflowX: 'auto',
+    fontSize: 12.5, fontFamily: 'monospace', color: '#cbd5e1',
+    margin: '0 0 10px', lineHeight: 1.6,
+  },
   time: {
     fontSize: 10, color: 'rgba(255,255,255,0.25)',
     margin: '6px 0 0', textAlign: 'right',
-  },
-  actions: { display: 'flex', gap: 4, marginTop: 8 },
-  actionBtn: {
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    color: 'rgba(255,255,255,0.35)',
-    borderRadius: 6, padding: '3px 7px',
-    cursor: 'pointer', display: 'flex', alignItems: 'center',
   },
   dot: {
     display: 'inline-block', width: 7, height: 7,

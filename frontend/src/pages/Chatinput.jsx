@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Send, Paperclip, Image } from 'lucide-react';
+import { Send } from 'lucide-react';
 
 const CHIPS = ['Rezumă cursul', 'Explică conceptul', 'Generează întrebări', 'Compară cu…'];
 
@@ -33,15 +33,6 @@ export default function ChatInput({ input, setInput, handleSend, isTyping }) {
 
       {/* Input box */}
       <div style={s.box}>
-        <div style={s.left}>
-          <button style={s.iconBtn} title="Atașează fișier">
-            <Paperclip size={18} style={{ color: 'rgba(255,255,255,0.4)' }} />
-          </button>
-          <button style={s.iconBtn} title="Imagine">
-            <Image size={18} style={{ color: 'rgba(255,255,255,0.4)' }} />
-          </button>
-        </div>
-
         <textarea
           ref={textareaRef}
           value={input}
@@ -85,12 +76,6 @@ const s = {
     backdropFilter: 'blur(20px)',
     borderRadius: 18, padding: '10px 14px',
     boxShadow: '0 0 0 1px rgba(99,102,241,0.05) inset',
-  },
-  left: { display: 'flex', gap: 4, paddingBottom: 2 },
-  iconBtn: {
-    background: 'none', border: 'none', cursor: 'pointer',
-    padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center',
-    transition: 'background 0.15s',
   },
   textarea: {
     flex: 1, background: 'transparent', border: 'none',

@@ -82,6 +82,7 @@ export default function FlashcardsMode({ conversationId, onClose }) {
   const [cards, setCards] = useState([]);
   const [current, setCurrent] = useState(0);
   const [error, setError] = useState('');
+  const [rawText, setRawText] = useState('');
   const [direction, setDirection] = useState(1);
 
   useEffect(() => { generateCards(); }, []);
@@ -106,10 +107,16 @@ Generează exact 8 linii în acest format, fără alte texte sau numerotare.`,
         }),
       });
       const data = await res.json();
-      const parsed = parseFlashcards(data.answer || '');
+      const text = data.answer || '';
+      setRawText(text);
+      const parsed = parseFlashcards(text);
       if (parsed.length === 0) {
-        setError('Nu am putut genera flashcard-uri. Asigură-te că ai cursuri încărcate.');
-        setPhase('error');
+        if (text.trim()) {
+          setPhase('raw');
+        } else {
+          setError('Nu am putut genera flashcard-uri. Asigură-te că ai cursuri încărcate.');
+          setPhase('error');
+        }
       } else {
         setCards(parsed);
         setPhase('cards');
@@ -160,6 +167,24 @@ Generează exact 8 linii în acest format, fără alte texte sau numerotare.`,
           <div style={s.center}>
             <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>{error}</p>
             <button style={s.regenBtn} onClick={generateCards}>Încearcă din nou</button>
+          </div>
+        )}
+
+        {phase === 'raw' && (
+          <div style={{ ...s.center, alignItems: 'stretch', maxWidth: 680, margin: '0 auto', padding: 24 }}>
+            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 12 }}>
+              Nu am putut formata cardurile — iată răspunsul AI:
+            </p>
+            <div style={{
+              fontSize: 14, lineHeight: 1.7, color: 'rgba(255,255,255,0.85)',
+              whiteSpace: 'pre-wrap', background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 20,
+            }}>
+              {rawText}
+            </div>
+            <button style={{ ...s.regenBtn, alignSelf: 'center', marginTop: 16 }} onClick={generateCards}>
+              <RefreshCw size={13} /> Încearcă din nou
+            </button>
           </div>
         )}
 
@@ -250,7 +275,6 @@ const s = {
     alignItems: 'center', padding: '32px 24px', gap: 28,
   },
 
-  // Flashcard 3D
   cardScene: {
     width: CARD_W, maxWidth: '90vw',
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
@@ -298,7 +322,6 @@ const s = {
   dot: { width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,0.12)', transition: 'all 0.2s' },
   dotActive: { background: '#818cf8', width: 18, borderRadius: 3 },
 
-  // Navigation
   nav: { display: 'flex', alignItems: 'center', gap: 16 },
   navBtn: {
     display: 'flex', alignItems: 'center', gap: 6,
@@ -312,7 +335,6 @@ const s = {
     cursor: 'pointer', display: 'flex', alignItems: 'center',
   },
 
-  // Mini grid
   miniGrid: {
     display: 'flex', flexWrap: 'wrap', gap: 8,
     justifyContent: 'center', maxWidth: 680,
